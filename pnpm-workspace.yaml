@@ -1,0 +1,8 @@
+packages:
+  - packages/*
+  - apps/*
+
+# Native binaries used by Vite/Wrangler; other dependency install scripts stay blocked.
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

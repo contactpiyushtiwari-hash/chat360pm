@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - name: Validate generated workbook
+        run: |
+          pip install openpyxl==3.1.5
+          pnpm validate:workbook
+      - name: Dependency audit (report only)
+        run: pnpm audit --prod || true
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @chat360/web exec playwright install --with-deps chromium
+      - run: pnpm --filter @chat360/web build
+      - run: pnpm e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: apps/web/test-results
+          retention-days: 7

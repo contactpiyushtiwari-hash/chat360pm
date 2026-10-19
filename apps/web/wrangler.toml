@@ -1,0 +1,14 @@
+# Cloudflare Pages project for the web app. `pages_build_output_dir` makes this file the
+# source of truth for Pages bindings. See docs/deployment.md.
+name = "chat360-ops-web"
+pages_build_output_dir = "dist"
+compatibility_date = "2025-10-01"
+
+# Preview deployments (branches / pull requests) talk to the staging API Worker.
+[[env.preview.services]]
+binding = "API"
+service = "chat360-ops-api-staging"
+
+[[env.production.services]]
+binding = "API"
+service = "chat360-ops-api-production"

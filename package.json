@@ -1,0 +1,30 @@
+{
+  "name": "chat360-project-ops",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Chat360 Project Operations Platform — serverless, OneDrive-first internal delivery platform.",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @chat360/api --filter @chat360/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "e2e": "pnpm --filter @chat360/web e2e",
+    "validate:workbook": "pnpm --filter @chat360/core exec tsx scripts/write-sample-workbook.ts ../../scripts/out/sample-tracker.xlsx && python3 scripts/validate_workbook.py scripts/out/sample-tracker.xlsx",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "eslint": "9.39.1",
+    "prettier": "3.6.2",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.46.2"
+  }
+}

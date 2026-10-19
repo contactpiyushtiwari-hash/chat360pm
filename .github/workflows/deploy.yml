@@ -1,0 +1,51 @@
+name: Deploy
+
+# Manual only. Configure GitHub Environments "staging" and "production" (add required reviewers
+# to production) with secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+# Worker secrets (ENTRA_CLIENT_SECRET, TOKEN_ENCRYPTION_KEY, COOKIE_SECRET) are set once with
+# `wrangler secret put` and are never passed through CI. See docs/deployment.md.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck && pnpm lint && pnpm test
+      - name: Deploy API Worker
+        working-directory: apps/api
+        run: pnpm exec wrangler deploy --env ${{ inputs.environment }} --var RELEASE:${{ github.sha }}
+      - name: Build web
+        run: pnpm --filter @chat360/web build
+      - name: Deploy Pages
+        working-directory: apps/web
+        run: pnpm exec wrangler pages deploy dist --project-name chat360-ops-web --branch ${{ inputs.environment == 'production' && 'main' || 'staging' }}
+      - name: Smoke check
+        if: ${{ vars.APP_URL != '' }}
+        run: curl --fail --silent --show-error "${{ vars.APP_URL }}/api/health"

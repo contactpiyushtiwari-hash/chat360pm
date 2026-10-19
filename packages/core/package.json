@@ -1,0 +1,24 @@
+{
+  "name": "@chat360/core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Pure domain logic for the Chat360 Project Operations Platform (no I/O).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./workbook": "./src/workbook/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "fflate": "0.8.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.12",
+    "vitest": "3.2.4"
+  }
+}
