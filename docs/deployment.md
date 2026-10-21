@@ -111,7 +111,7 @@ The Durable Object migration (`v1`, `new_sqlite_classes = ["Coordinator"]`) is a
 1. `GET https://<host>/api/health` → `{"status":"ok","environment":"staging",…}`. A `503 service_misconfigured` means configuration is incomplete; the Worker log line `configuration_error` lists what is missing.
 2. Sign in with a bootstrap admin; check Admin → Health (storage OK, mailbox configured).
 3. Assign roles to a test PM, tech and Delivery Head.
-4. Create a test project; open the tracker in Excel for the web; confirm six sheets, tables, dropdowns and formulas.
+4. Create a test project; open the tracker in Excel for the web; confirm the seven sheets (six delivery sheets + Finance), tables, dropdowns and formulas, and that Finance → Total equals the first two amounts.
 5. Confirm a task as Not completed; check the escalation email arrives from the notification mailbox and the Excel row updates.
 6. Edit a WBS cell in Excel, update the task in the app, and confirm a conflict is shown, then resolved by "Overwrite".
 7. Run a transfer request → approve, and a direct reassignment; check history and tracker header.

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import openpyxl
 
-EXPECTED_SHEETS = ["Gantt Chart", "WBS", "API List Pending", "Escalation Matrix", "Last Week Task", "This Week Task"]
+EXPECTED_SHEETS = ["Gantt Chart", "WBS", "API List Pending", "Escalation Matrix", "Last Week Task", "This Week Task", "Finance"]
 EXPECTED_TABLES = {
     "Gantt Chart": ["tblGantt"],
     "WBS": ["tblWBS"],
@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "Escalation Matrix": ["tblEscalationMatrix", "tblEscalationLog"],
     "Last Week Task": ["tblLastWeek"],
     "This Week Task": ["tblThisWeek"],
+    "Finance": ["tblFinance"],
 }
 
 
@@ -33,7 +34,7 @@ def main(path: str) -> int:
             errors.append(f"{name}: tables {list(ws.tables.keys())}")
         if ws.freeze_panes is None:
             errors.append(f"{name}: no freeze panes")
-        if name != "Escalation Matrix" and not ws.data_validations.dataValidation and name not in ("API List Pending",):
+        if name != "Escalation Matrix" and not ws.data_validations.dataValidation and name not in ("API List Pending", "Finance"):
             errors.append(f"{name}: no data validation")
     wbs = wb["WBS"]
     header = [c.value for c in wbs[5]]
@@ -41,6 +42,12 @@ def main(path: str) -> int:
         errors.append(f"WBS header {header}")
     if not str(wbs["K6"].value).startswith("="):
         errors.append(f"WBS Current Due is not a formula: {wbs['K6'].value!r}")
+    fin = wb["Finance"]
+    fin_header = [c.value for c in fin[5]]
+    if fin_header[3:7] != ["Amount Raised and Overdue (for Go-Live)", "Amount that can be raised on immediate basis", "Total", "Amount to be raised"]:
+        errors.append(f"Finance header {fin_header}")
+    if not str(fin["F6"].value).startswith("="):
+        errors.append(f"Finance Total is not a formula: {fin['F6'].value!r}")
     print(f"openpyxl: {len(wb.sheetnames)} sheets, WBS rows={wbs.max_row - 5}")
 
     soffice = shutil.which("soffice") or shutil.which("libreoffice")

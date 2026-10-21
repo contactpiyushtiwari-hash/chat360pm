@@ -25,7 +25,7 @@ Non-goals: client-facing portal, time tracking, invoicing/billing, replacing Out
 
 ## 3. Key user journeys
 
-1. **Create a project:** PM → New project wizard (basics, team, scope, template & destination, review) → project + `project.json` + six-sheet `.xlsx` saved in the approved OneDrive folder → link shown.
+1. **Create a project:** PM → New project wizard (basics, team, scope, template & destination, review) → project + `project.json` + `.xlsx` tracker (six delivery sheets + Finance) saved in the approved OneDrive folder → link shown.
 2. **Daily confirmation:** Owner opens My Tasks Today → Completed (closure notes, evidence) or Not completed (reason, next action, revised ETA) → escalation to the configured manager → Excel updates in the background with the outcome shown.
 3. **No response:** at end of day the system marks Unconfirmed and escalates (once).
 4. **Transfer (PM-initiated):** PM → Request project transfer (pre-filled handover) → Delivery Head reviews → approve (choose PM) / reject (reason) → executed and audited.
@@ -59,17 +59,17 @@ Non-goals: client-facing portal, time tracking, invoicing/billing, replacing Out
 
 ### Projects and Excel (PROJ)
 
-| ID           | Requirement                                                                                                                                                 | Status                                |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| PRD-PROJ-001 | Project wizard collects client, name, category, team, dates, languages, integrations, QA/UAT workflow, template and approved destination.                   | Implemented                           |
-| PRD-PROJ-002 | A valid `.xlsx` with six sheets (Gantt Chart, WBS, API List Pending, Escalation Matrix, Last Week Task, This Week Task) is generated and saved to OneDrive. | Implemented (live OneDrive pending)   |
-| PRD-PROJ-003 | Workbooks use Excel tables, filters, formulas, date formats, list validation, conditional formatting and freeze panes.                                      | Implemented                           |
-| PRD-PROJ-004 | Updates never blindly overwrite: rows keyed by ID, user columns/rows preserved, Excel edits reported as conflicts.                                          | Implemented                           |
-| PRD-PROJ-005 | Synchronisation status (synced, pending, failed, conflict) and errors are visible; sync can be retried.                                                     | Implemented                           |
-| PRD-PROJ-006 | Workbook generation failure is reported and retryable without recreating the project.                                                                       | Implemented                           |
-| PRD-PROJ-007 | Project documents (SOW, BRD, bot flows) can be linked.                                                                                                      | Implemented (links only)              |
-| PRD-PROJ-008 | Excel edits can be imported back into the app.                                                                                                              | Planned                               |
-| PRD-PROJ-009 | Project folders are shared automatically with team members.                                                                                                 | Planned (library permissions assumed) |
+| ID           | Requirement                                                                                                                                                                                             | Status                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| PRD-PROJ-001 | Project wizard collects client, name, category, team, dates, languages, integrations, QA/UAT workflow, template and approved destination.                                                               | Implemented                           |
+| PRD-PROJ-002 | A valid `.xlsx` with six delivery sheets (Gantt Chart, WBS, API List Pending, Escalation Matrix, Last Week Task, This Week Task) plus a Finance sheet (PRD-FIN-005) is generated and saved to OneDrive. | Implemented (live OneDrive pending)   |
+| PRD-PROJ-003 | Workbooks use Excel tables, filters, formulas, date formats, list validation, conditional formatting and freeze panes.                                                                                  | Implemented                           |
+| PRD-PROJ-004 | Updates never blindly overwrite: rows keyed by ID, user columns/rows preserved, Excel edits reported as conflicts.                                                                                      | Implemented                           |
+| PRD-PROJ-005 | Synchronisation status (synced, pending, failed, conflict) and errors are visible; sync can be retried.                                                                                                 | Implemented                           |
+| PRD-PROJ-006 | Workbook generation failure is reported and retryable without recreating the project.                                                                                                                   | Implemented                           |
+| PRD-PROJ-007 | Project documents (SOW, BRD, bot flows) can be linked.                                                                                                                                                  | Implemented (links only)              |
+| PRD-PROJ-008 | Excel edits can be imported back into the app.                                                                                                                                                          | Planned                               |
+| PRD-PROJ-009 | Project folders are shared automatically with team members.                                                                                                                                             | Planned (library permissions assumed) |
 
 ### Tasks and WBS (TASK)
 
@@ -114,6 +114,18 @@ Non-goals: client-facing portal, time tracking, invoicing/billing, replacing Out
 | PRD-COMM-002 | Send from the user's own mailbox (delegated); record project-linked sends without storing bodies; show failures.                                             | Implemented (live Graph pending)  |
 | PRD-COMM-003 | Today's and upcoming meetings; create (with Teams option), update, cancel; external attendees need confirmation.                                             | Implemented (live Graph pending)  |
 | PRD-COMM-004 | Attachments on outgoing email.                                                                                                                               | Planned (workbook link supported) |
+
+### Finance (FIN)
+
+| ID          | Requirement                                                                                                                                                                                                                                 | Status                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| PRD-FIN-001 | Each project records, in a currency (default INR): **Amount Raised and Overdue (for Go-Live)**, **Amount that can be raised on immediate basis**, **Total**, **Amount to be raised**, plus remarks, last updated time and person.           | Implemented                                                    |
+| PRD-FIN-002 | **Total = Amount Raised and Overdue (for Go-Live) + Amount that can be raised on immediate basis**; it is calculated (in the app and by an Excel formula), never typed.                                                                     | Implemented (interpretation to confirm with Chat360 — ADR-019) |
+| PRD-FIN-003 | Amounts are non-negative with at most 2 decimals; stale concurrent edits are rejected; every change is audited with old and new values.                                                                                                     | Implemented                                                    |
+| PRD-FIN-004 | PM, the project's Delivery Head, Delivery Heads (portfolio) and the Sales POC can edit; the CSM can view; Tech Team, FDE, former PMs and administrators cannot see the figures in the app (including audit entries and transfer snapshots). | Implemented                                                    |
+| PRD-FIN-005 | The tracker has a seventh sheet, **Finance** (`tblFinance`), kept in sync like the other sheets; an overdue amount above zero is highlighted.                                                                                               | Implemented (live Excel pending)                               |
+| PRD-FIN-006 | Finance is part of the transfer handover summary, and analytics show per-currency totals for projects the viewer may see.                                                                                                                   | Implemented                                                    |
+| PRD-FIN-007 | Restricting the Finance sheet inside the Excel file itself (separate workbook or sheet protection).                                                                                                                                         | Planned — see ADR-019                                          |
 
 ### Onboarding, support, account (ONB / SUP / ACCT)
 

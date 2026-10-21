@@ -410,6 +410,10 @@ code,
   color: var(--c-muted);
   font-size: var(--fs-sm);
 }
+.stat-value.money {
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
 .stat-alert .stat-value {
   color: var(--c-danger);
 }

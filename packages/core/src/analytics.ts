@@ -1,5 +1,6 @@
 import { calendarOf } from './context';
 import { addDays, weekStart, workingDaysAfter } from './dates';
+import { financeOf, financeTotal } from './finance';
 import { summarizeProject } from './project';
 import { isOpen, isOverdue } from './tasks';
 import { weekRows } from './weekly';
@@ -37,6 +38,15 @@ export interface DeliveryAnalytics {
   delayReasons: { id: string; label: string; count: number }[];
   confirmation: { decisions: number; noResponse: number; responseRate: number | null };
   transfers: { requested: number; completed: number; rejected: number; direct: number };
+  /** Totals per currency over projects whose finance the caller may see. */
+  finance: {
+    currency: string;
+    projects: number;
+    raisedOverdueForGoLive: number;
+    raisableImmediately: number;
+    total: number;
+    toBeRaised: number;
+  }[];
   projects: {
     id: string;
     name: string;
@@ -56,6 +66,7 @@ export function computeAnalytics(
   config: OrgConfig,
   directory: DirectoryUser[],
   weeks = 4,
+  canViewFinance: (p: Project) => boolean = () => false,
 ): DeliveryAnalytics {
   const cal = calendarOf(config);
   const nameOf = (id: UserId) => directory.find((u) => u.id === id)?.displayName ?? 'Unknown user';
@@ -80,7 +91,25 @@ export function computeAnalytics(
   const projectRows: DeliveryAnalytics['projects'] = [];
   const sideOf = (id: string) => config.delayReasons.find((r) => r.id === id)?.side;
 
+  const finance = new Map<string, DeliveryAnalytics['finance'][number]>();
   for (const p of projects) {
+    if (canViewFinance(p) && p.status !== 'cancelled') {
+      const f = financeOf(p);
+      const acc = finance.get(f.currency) ?? {
+        currency: f.currency,
+        projects: 0,
+        raisedOverdueForGoLive: 0,
+        raisableImmediately: 0,
+        total: 0,
+        toBeRaised: 0,
+      };
+      acc.projects += 1;
+      acc.raisedOverdueForGoLive += f.raisedOverdueForGoLive;
+      acc.raisableImmediately += f.raisableImmediately;
+      acc.total += financeTotal(f);
+      acc.toBeRaised += f.toBeRaised;
+      finance.set(f.currency, acc);
+    }
     const summary = summarizeProject(p, today);
     if (p.status === 'active') health[summary.health] += 1;
     projectRows.push({
@@ -206,6 +235,9 @@ export function computeAnalytics(
       .sort((a, b) => b.count - a.count),
     confirmation: { decisions, noResponse, responseRate: ratio(decisions, decisions + noResponse) },
     transfers,
+    finance: [...finance.values()]
+      .map((f) => ({ ...f, total: Math.round(f.total * 100) / 100 }))
+      .sort((a, b) => a.currency.localeCompare(b.currency)),
     projects: projectRows,
   };
 }

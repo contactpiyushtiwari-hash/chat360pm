@@ -24,28 +24,29 @@ Status labels: **Implemented** = built and covered by automated tests here; **Ve
 
 ## Modules and feature status
 
-| Module               | Feature                                                                                 | Status                                   |
-| -------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------- |
-| Sign-in              | Microsoft (Entra ID) sign-in, guest refusal, sessions, sign-out                         | Implemented                              |
-| Onboarding           | Role-specific checklist, skip optional steps, system-verified steps                     | Implemented                              |
-| Projects             | Creation wizard with templates and approved destinations                                | Implemented                              |
-| Projects             | Team management with history; document links                                            | Implemented                              |
-| Excel tracker        | Six-sheet generation in OneDrive; background sync; conflict review; manual sync/retry   | Implemented                              |
-| Excel tracker        | Importing edits made in Excel back into the app                                         | Planned                                  |
-| Tasks                | List / Kanban / Gantt, task dialog, revisions, comments, history                        | Implemented                              |
-| Daily confirmation   | My Tasks Today, Completed/Not completed, end-of-day no-response marking                 | Implemented                              |
-| Escalations          | Policy levels and SLAs, acknowledge/resolve, email notifications                        | Implemented                              |
-| Reminders            | Morning digest email per owner                                                          | Implemented (needs notification mailbox) |
-| API dependencies     | Track readiness/testing/next action; credential-like text rejected                      | Implemented                              |
-| Transfers            | PM request with handover; Head approve/reject; direct reassignment; resumable execution | Implemented                              |
-| Email                | Templates, preview, external-recipient confirmation, send from own mailbox              | Implemented                              |
-| Calendar             | View, create (Teams option), cancel                                                     | Implemented                              |
-| Calendar             | Edit meeting time/subject from the UI                                                   | API implemented; UI Planned              |
-| Analytics            | Portfolio and own-project delivery metrics                                              | Implemented                              |
-| Support              | Requests, triage, statuses, history                                                     | Implemented                              |
-| Account              | Deactivation request with project protection and admin review                           | Implemented                              |
-| Monitoring           | Client crash reports, structured logs, job ledger, health page                          | Implemented                              |
-| Billing / app stores | Not applicable (ADR-015, ADR-016)                                                       | —                                        |
+| Module               | Feature                                                                                                   | Status                                   |
+| -------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| Sign-in              | Microsoft (Entra ID) sign-in, guest refusal, sessions, sign-out                                           | Implemented                              |
+| Onboarding           | Role-specific checklist, skip optional steps, system-verified steps                                       | Implemented                              |
+| Projects             | Creation wizard with templates and approved destinations                                                  | Implemented                              |
+| Projects             | Team management with history; document links                                                              | Implemented                              |
+| Excel tracker        | Six-sheet generation in OneDrive; background sync; conflict review; manual sync/retry                     | Implemented                              |
+| Excel tracker        | Importing edits made in Excel back into the app                                                           | Planned                                  |
+| Tasks                | List / Kanban / Gantt, task dialog, revisions, comments, history                                          | Implemented                              |
+| Daily confirmation   | My Tasks Today, Completed/Not completed, end-of-day no-response marking                                   | Implemented                              |
+| Escalations          | Policy levels and SLAs, acknowledge/resolve, email notifications                                          | Implemented                              |
+| Reminders            | Morning digest email per owner                                                                            | Implemented (needs notification mailbox) |
+| API dependencies     | Track readiness/testing/next action; credential-like text rejected                                        | Implemented                              |
+| Transfers            | PM request with handover; Head approve/reject; direct reassignment; resumable execution                   | Implemented                              |
+| Email                | Templates, preview, external-recipient confirmation, send from own mailbox                                | Implemented                              |
+| Calendar             | View, create (Teams option), cancel                                                                       | Implemented                              |
+| Calendar             | Edit meeting time/subject from the UI                                                                     | API implemented; UI Planned              |
+| Analytics            | Portfolio and own-project delivery metrics                                                                | Implemented                              |
+| Support              | Requests, triage, statuses, history                                                                       | Implemented                              |
+| Account              | Deactivation request with project protection and admin review                                             | Implemented                              |
+| Monitoring           | Client crash reports, structured logs, job ledger, health page                                            | Implemented                              |
+| Finance              | Per-project Finance tab (4 figures, calculated Total), Excel Finance sheet, handover and analytics totals | Implemented                              |
+| Billing / app stores | Not applicable (ADR-015, ADR-016)                                                                         | —                                        |
 
 ## Excel tracker
 
@@ -59,6 +60,7 @@ Saved as `<Destination>/<PRJ-ID> <Client> - <Project>/<Client> - <Project> - Tra
 | Escalation Matrix | `tblEscalationMatrix`, `tblEscalationLog`           | Matrix: Level, Responsible Role, Manager Mapping, Severity, Escalation Condition, SLA (hours). Log: Escalation ID, Task ID, Task, Owner, Type, Level, Severity, Reason, Impact, Next Action, Original Due, Revised ETA, Raised At, Manager, Notification, Acknowledgement, Resolution Status |
 | Last Week Task    | `tblLastWeek`                                       | Week Of, Task ID, Task, Owner, Original Deadline, Completion Date, Status, Carry Forward, Delay Reason, Blocker, Closure Notes                                                                                                                                                               |
 | This Week Task    | `tblThisWeek`                                       | Week Of, Task ID, Task, Owner, Priority, Due Date, Status, Dependencies, Blocker, Next Action, Revised ETA, Completion Confirmation                                                                                                                                                          |
+| Finance           | `tblFinance`                                        | Project ID, Client, Currency, Amount Raised and Overdue (for Go-Live), Amount that can be raised on immediate basis, Total _(formula = first two amounts)_, Amount to be raised, Remarks, Last Updated                                                                                       |
 
 Rules people should know:
 
@@ -66,6 +68,8 @@ Rules people should know:
 - You can add your own columns, notes and rows; the app leaves them alone.
 - Weekly sheets keep one row per week per task, so past weeks remain as history.
 - Manager names come from the project team; unassigned roles show "Unassigned". No names are invented.
+
+**Finance visibility:** in the app only the PM, Delivery Head, Sales POC (edit) and CSM (view) see finance figures. The Finance _sheet_ is inside the shared tracker, so anyone who can open the workbook can read it (ADR-019).
 
 ## Key workflows
 
@@ -80,6 +84,8 @@ Rules people should know:
 **Review a transfer (Delivery Head)** — Transfers → open request → Start review → Approve… (choose new PM) or Reject… (reason required). If the effective date is today or earlier it executes immediately; otherwise on that date. Execution steps and any errors are shown; "Retry execution" resumes an interrupted one.
 
 **Change project PM (Delivery Head)** — Project → Transfers → Change project PM → review the handover → tick the confirmation → Confirm reassignment.
+
+**Finance** — Project → Finance → Update figures (PM, Sales POC or Delivery Head). Enter Amount Raised and Overdue (for Go-Live), Amount that can be raised on immediate basis and Amount to be raised; Total is calculated. The Excel Finance sheet updates in the background.
 
 **Email** — Email → template (optional) → To/Cc/Subject/Message → Preview → confirm external recipients → Send. "Sent" means Outlook accepted the message.
 

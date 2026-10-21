@@ -5,6 +5,7 @@ import {
   desiredRows,
   headerBlock,
   trackerTables,
+  FINANCE_HEADERS,
   type CellValue,
   type ColumnDef,
   type NameOf,
@@ -32,6 +33,8 @@ function styleFor(col: ColumnDef): StyleId {
       return STYLE.date;
     case 'percent':
       return STYLE.percent;
+    case 'money':
+      return STYLE.money;
     case 'number':
       return STYLE.integer;
     case 'longtext':
@@ -283,7 +286,27 @@ export function buildTrackerSheets(project: Project, opts: GenerateOptions): She
   addTable(thisWeek, tw, rows.tblThisWeek!);
   statusFormats(thisWeek, tw);
 
-  return [gantt, wbs, apis, esc, last, thisWeek];
+  // Sheet 7: Finance (commercial position). One row per project, total computed by Excel.
+  const fin = get('tblFinance');
+  const finance = newSheet(SHEETS[6], hdr.title, 'B6');
+  finance.cells.push({
+    row: 4,
+    col: 1,
+    value: 'Commercial figures: anyone who can open this workbook can see this sheet.',
+    style: STYLE.note,
+  });
+  addTable(finance, fin, rows.tblFinance!);
+  {
+    const r = fin.headerRow + 1;
+    const O = columnLetter(fin, FINANCE_HEADERS.raisedOverdue);
+    finance.conditionalFormats.push({
+      sqref: `${O}${r}:${O}${fin.headerRow + FORMAT_ROWS}`,
+      formula: `$${O}${r}>0`,
+      dxf: DXF.overdue,
+    });
+  }
+
+  return [gantt, wbs, apis, esc, last, thisWeek, finance];
 }
 
 export function generateTracker(project: Project, opts: GenerateOptions): Uint8Array {

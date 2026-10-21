@@ -38,6 +38,7 @@ import { TaskDialog } from '../components/TaskDialog';
 import { TaskGantt, TaskKanban, TaskList } from '../components/TaskViews';
 import { ReassignPmDialog, RequestTransferDialog } from '../components/Handover';
 import { UserMultiSelect, UserSelect } from '../components/UserPicker';
+import { FinanceTab } from '../components/FinanceTab';
 import { NotFoundPage } from './NotFound';
 
 type TabId =
@@ -47,14 +48,15 @@ type TabId =
   | 'escalations'
   | 'transfers'
   | 'history'
-  | 'communications';
+  | 'communications'
+  | 'finance';
 
 export function ProjectDetailPage() {
   const { id = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const me = useMe();
   const r = useResource<{ project: ProjectView }>(`/api/projects/${encodeURIComponent(id)}`);
-  const tab = (params.get('tab') as TabId) || 'overview';
+  const requested = (params.get('tab') as TabId) || 'overview';
   const setTab = (t: TabId) =>
     setParams(
       (p) => {
@@ -70,6 +72,7 @@ export function ProjectDetailPage() {
   if (r.error && !r.data) return <ErrorState error={r.error} onRetry={r.reload} />;
   const p = r.data!.project;
   const openEsc = p.escalations.filter((e) => e.status !== 'resolved').length;
+  const tab: TabId = requested === 'finance' && !p.permissions.viewFinance ? 'overview' : requested;
 
   return (
     <>
@@ -126,6 +129,7 @@ export function ProjectDetailPage() {
           { id: 'transfers', label: 'Transfers' },
           { id: 'history', label: 'History' },
           { id: 'communications', label: 'Communications' },
+          ...(p.permissions.viewFinance ? [{ id: 'finance' as const, label: 'Finance' }] : []),
         ]}
       />
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} className="tab-panel">
@@ -136,6 +140,7 @@ export function ProjectDetailPage() {
         {tab === 'transfers' && <TransfersTab p={p} reload={r.reload} today={me.today} />}
         {tab === 'history' && <HistoryTab p={p} />}
         {tab === 'communications' && <CommsTab p={p} />}
+        {tab === 'finance' && <FinanceTab p={p} reload={r.reload} />}
       </div>
     </>
   );

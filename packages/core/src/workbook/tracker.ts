@@ -1,4 +1,5 @@
 import { toExcelSerial } from '../dates';
+import { financeOf } from '../finance';
 import { currentDue, humanConfirmationOn } from '../tasks';
 import { lastWeekRows, thisWeekRows, type WeekTaskRow } from '../weekly';
 import {
@@ -14,7 +15,7 @@ import {
 } from '../types';
 
 export type CellValue = string | number;
-export type ColumnType = 'text' | 'longtext' | 'date' | 'number' | 'percent';
+export type ColumnType = 'text' | 'longtext' | 'date' | 'number' | 'percent' | 'money';
 
 export interface ColumnDef {
   header: string;
@@ -42,6 +43,7 @@ export const SHEETS = [
   'Escalation Matrix',
   'Last Week Task',
   'This Week Task',
+  'Finance',
 ] as const;
 
 const STATUS_LIST = Object.values(TASK_STATUS_LABELS);
@@ -231,8 +233,38 @@ export function trackerTables(config: Pick<OrgConfig, 'workingDays'>): TableDef[
         { header: 'Completion Confirmation', type: 'text', width: 26 },
       ],
     },
+    {
+      name: 'tblFinance',
+      sheet: 'Finance',
+      headerRow: 5,
+      keyColumns: ['Project ID'],
+      columns: [
+        { header: 'Project ID', type: 'text', width: 14 },
+        { header: 'Client', type: 'text', width: 24 },
+        { header: 'Currency', type: 'text', width: 10 },
+        { header: FINANCE_HEADERS.raisedOverdue, type: 'money', width: 22 },
+        { header: FINANCE_HEADERS.raisable, type: 'money', width: 22 },
+        {
+          header: FINANCE_HEADERS.total,
+          type: 'money',
+          width: 18,
+          formula: `[@[${FINANCE_HEADERS.raisedOverdue}]]+[@[${FINANCE_HEADERS.raisable}]]`,
+        },
+        { header: FINANCE_HEADERS.toBeRaised, type: 'money', width: 20 },
+        { header: 'Remarks', type: 'longtext', width: 34 },
+        { header: 'Last Updated', type: 'text', width: 17 },
+      ],
+    },
   ];
 }
+
+/** Finance column headers, exactly as Chat360 names them. */
+export const FINANCE_HEADERS = {
+  raisedOverdue: 'Amount Raised and Overdue (for Go-Live)',
+  raisable: 'Amount that can be raised on immediate basis',
+  total: 'Total',
+  toBeRaised: 'Amount to be raised',
+} as const;
 
 export interface DesiredRow {
   key: string;
@@ -428,6 +460,19 @@ export function desiredRows(
         'Next Action': r.task.nextAction,
         'Revised ETA': currentDue(r.task) > r.due ? d(currentDue(r.task)) : '',
         'Completion Confirmation': confirmationLabel(r, today, nameOf),
+      },
+    })),
+    tblFinance: [financeOf(project)].map((f) => ({
+      key: rowKey([project.id]),
+      values: {
+        'Project ID': project.id,
+        Client: project.clientName,
+        Currency: f.currency,
+        [FINANCE_HEADERS.raisedOverdue]: f.raisedOverdueForGoLive,
+        [FINANCE_HEADERS.raisable]: f.raisableImmediately,
+        [FINANCE_HEADERS.toBeRaised]: f.toBeRaised,
+        Remarks: f.remarks,
+        'Last Updated': f.updatedAt ? formatInstant(f.updatedAt, config.timezone) : '',
       },
     })),
   };

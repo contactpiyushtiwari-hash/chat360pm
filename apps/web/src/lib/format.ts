@@ -35,3 +35,16 @@ export function titleCase(s: string): string {
 export function fmtWallTime(dt: string): { date: string; time: string } {
   return { date: fmtDate(dt.slice(0, 10)), time: dt.slice(11, 16) };
 }
+
+/** Money in the project currency, Indian digit grouping (e.g. ₹3,50,000.00). */
+export function fmtMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  }
+}

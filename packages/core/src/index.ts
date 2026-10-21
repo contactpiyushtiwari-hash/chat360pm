@@ -18,3 +18,4 @@ export * from './onboarding';
 export * from './support';
 export * from './account';
 export * from './communications';
+export * from './finance';

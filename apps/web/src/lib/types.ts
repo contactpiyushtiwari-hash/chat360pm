@@ -40,6 +40,8 @@ export type ProjectView = Omit<Project, 'appliedOperations' | 'workbook'> & {
   access: ProjectAccessLevel;
   permissions: Record<
     | 'edit'
+    | 'viewFinance'
+    | 'editFinance'
     | 'editTeam'
     | 'createTask'
     | 'manageApis'

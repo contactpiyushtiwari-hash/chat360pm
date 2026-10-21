@@ -28,6 +28,8 @@ import {
   updateTaskSchema,
   updateTeam,
   updateTeamSchema,
+  updateFinance,
+  updateFinanceSchema,
   can,
   PROJECT_TEMPLATES,
   recordAudit,
@@ -37,7 +39,7 @@ import { z } from 'zod';
 import { domainContext } from '../deps';
 import { body, idempotencyKey, limit, requireUser, type AppEnv } from '../http/context';
 import { createWorkbook, syncWorkbook } from '../services/workbook';
-import { loadProject, mutateProject, presentProject } from './project-helpers';
+import { loadProject, mutateProject, presentProject, redactFinance } from './project-helpers';
 
 export const projectRoutes = new Hono<AppEnv>();
 
@@ -134,6 +136,15 @@ projectRoutes.patch('/:id', async (c) => {
   return c.json({ project: presentProject(project, ctx.actor, ctx.today) });
 });
 
+projectRoutes.put('/:id/finance', async (c) => {
+  const input = await body(c, updateFinanceSchema);
+  const { project, ctx } = await mutateProject(c, c.req.param('id'), (p, ctx) =>
+    updateFinance(p, input, ctx),
+  );
+  c.get('deps').analytics.track('finance_updated', { projectId: project.id });
+  return c.json({ project: presentProject(project, ctx.actor, ctx.today) });
+});
+
 projectRoutes.put('/:id/team', async (c) => {
   const input = await body(c, updateTeamSchema);
   const directory = await c.get('deps').repos.directory();
@@ -145,7 +156,8 @@ projectRoutes.put('/:id/team', async (c) => {
 });
 
 projectRoutes.get('/:id/history', async (c) => {
-  const { project } = await loadProject(c, c.req.param('id'));
+  const loaded = await loadProject(c, c.req.param('id'));
+  const project = redactFinance(loaded.project, loaded.ctx.actor, loaded.ctx.today);
   return c.json({
     teamHistory: project.teamHistory,
     transfers: project.transfers,

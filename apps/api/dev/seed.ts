@@ -125,6 +125,16 @@ export async function seedDemo(deps: Deps) {
     updatedBy: 'demo-tech1',
   });
   p1.counters.api = 1;
+  // Fictional figures for the demo Finance tab.
+  p1.finance = {
+    currency: 'INR',
+    raisedOverdueForGoLive: 350000,
+    raisableImmediately: 150000,
+    toBeRaised: 600000,
+    remarks: 'Demo: milestone 2 invoice awaiting client PO',
+    updatedAt: now,
+    updatedBy: 'demo-sales',
+  };
 
   const p2 = createProject(
     {

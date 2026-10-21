@@ -1,5 +1,6 @@
 import { recordAudit, touch, type DomainContext } from './context';
 import { addDays } from './dates';
+import { financeOf, financeTotal } from './finance';
 import { DomainError, forbidden, invalid, invalidTransition, notFound } from './errors';
 import { newNotificationId, newTransferId } from './ids';
 import { accessSubjectOf, can, hasGlobalRole } from './rbac';
@@ -65,6 +66,7 @@ export function buildHandoverSummary(
     blockers: open
       .filter((t) => t.blocker.trim())
       .map((t) => ({ id: t.id, title: t.title, blocker: t.blocker })),
+    finance: { ...financeOf(project), total: financeTotal(financeOf(project)) },
   };
 }
 

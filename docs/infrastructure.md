@@ -61,7 +61,7 @@ All business data is owned by Chat360 and stored in its tenant:
       (SOW, BRD, bot flows… managed by people; linked from the app)
 ```
 
-`project.json` holds team and team history, tasks (with revisions, confirmations, comments, history), API dependencies, escalations (with level history and notification records), transfers (with snapshot, execution steps and history), document links, communication references, workbook sync state, project audit and idempotency keys.
+`project.json` holds team and team history, finance figures, tasks (with revisions, confirmations, comments, history), API dependencies, escalations (with level history and notification records), transfers (with snapshot, execution steps and history), document links, communication references, workbook sync state, project audit and idempotency keys.
 
 The Coordinator holds **no business records** (ADR-003). Losing it signs everyone out and resets counters.
 

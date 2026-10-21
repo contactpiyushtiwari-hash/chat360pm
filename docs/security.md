@@ -53,6 +53,11 @@ Not requested: `Files.ReadWrite.All`, `Sites.ReadWrite.All`, `Mail.ReadWrite`, `
 - **Injection:** no SQL; OneDrive paths are built from validated ids and sanitised folder names (`safeFolderName`), destinations come only from admin configuration and reject `..`/`.` segments; Graph path segments are URL-encoded.
 - **SSRF:** the Worker only calls fixed Microsoft hosts and the pre-authenticated download URLs Graph returns; no user-supplied URLs are fetched.
 
+## Project finance
+
+- Finance figures are visible in the app to the PM, the project's Delivery Head, users with the Delivery Head role, the Sales POC (all may edit) and the CSM (view only). Tech Team, FDE, former PMs and administrators do not receive them; the API removes amounts from the project, from `finance.updated` audit entries and from transfer handover snapshots (`redactFinance`).
+- **Residual risk:** the same figures are written to the Finance sheet of the project tracker, which anyone with access to the project folder can open. Restrict folder access or move finance to a separate restricted workbook if this is not acceptable (ADR-019, PRD-FIN-007).
+
 ## Data handling and privacy
 
 - Business records live in Chat360's OneDrive/SharePoint, inside the tenant.
@@ -91,7 +96,8 @@ Per-user/IP fixed windows in the Coordinator (see `docs/api_guidelines.md`). Opt
 3. **App-only `Sites.Selected` write:** a compromised Worker secret could modify files in the granted site. Mitigate with secret rotation, Cloudflare account MFA, and limiting the grant to one site.
 4. **Notification delivery:** `sent` means Graph accepted the message, not that it was delivered.
 5. **Former-PM read access:** 30 days by default — confirm with Chat360 policy.
-6. **No formal penetration test or accessibility audit has been performed.**
+6. **Finance in the shared tracker:** the Finance sheet is readable by everyone who can open the workbook (ADR-019).
+7. **No formal penetration test or accessibility audit has been performed.**
 
 ## Incident response
 

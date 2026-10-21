@@ -1,5 +1,6 @@
 import {
   accessSubjectOf,
+  can,
   addDays,
   canViewPortfolio,
   computeAnalytics,
@@ -111,6 +112,8 @@ portfolioRoutes.get('/analytics', async (c) => {
   return c.json({
     scope: portfolio ? 'portfolio' : 'mine',
     truncated,
-    analytics: computeAnalytics(docs, ctx.today, ctx.config, directory.users),
+    analytics: computeAnalytics(docs, ctx.today, ctx.config, directory.users, 4, (p) =>
+      can(user, 'finance.view', accessSubjectOf(p), ctx.today),
+    ),
   });
 });

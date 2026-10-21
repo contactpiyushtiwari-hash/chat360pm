@@ -32,7 +32,7 @@ function newProjectBody(over: Record<string, unknown> = {}) {
 }
 
 describe('project creation and workbook generation', () => {
-  it('creates the project, its six-sheet workbook in OneDrive, and an index entry', async () => {
+  it('creates the project, its tracker workbook in OneDrive, and an index entry', async () => {
     const t = await setup();
     const pm = await t.as('demo-pm1');
     const res = await pm.post('/api/projects', newProjectBody());

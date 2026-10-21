@@ -60,18 +60,22 @@ export class GraphWorkbookGateway implements WorkbookGateway {
         })),
         false,
       );
-      return tables.map((t) => {
+      // A table missing from an older workbook (404) is skipped so the other tables still sync.
+      return tables.flatMap((t) => {
         const r = res.get(t);
+        if (r?.status === 404) return [];
         if (!r || r.status >= 400) throw batchError(r?.status ?? 500, r?.body);
         const body = r.body as { address: string; formulas: unknown[][] };
         const a = parseAddress(body.address);
-        return {
-          name: t,
-          sheet: a.sheet,
-          headers: (body.formulas[0] ?? []).map((h) => String(h)),
-          rows: body.formulas.slice(1),
-          firstDataRow: a.firstRow + 1,
-        };
+        return [
+          {
+            name: t,
+            sheet: a.sheet,
+            headers: (body.formulas[0] ?? []).map((h) => String(h)),
+            rows: body.formulas.slice(1),
+            firstDataRow: a.firstRow + 1,
+          },
+        ];
       });
     });
   }

@@ -5,7 +5,13 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { confirmTask, createProject, defaultOrgConfig, type DirectoryUser } from '../src';
+import {
+  confirmTask,
+  createProject,
+  defaultOrgConfig,
+  updateFinance,
+  type DirectoryUser,
+} from '../src';
 import { generateTracker } from '../src/workbook';
 
 const mk = (id: string, roles: DirectoryUser['roles']): DirectoryUser => ({
@@ -67,6 +73,17 @@ if (due) {
     ctx,
   );
 }
+updateFinance(
+  project,
+  {
+    currency: 'INR',
+    raisedOverdueForGoLive: 350000,
+    raisableImmediately: 150000.5,
+    toBeRaised: 600000,
+    remarks: 'Sample figures',
+  },
+  ctx,
+);
 const out = resolve(process.argv[2] ?? 'sample-tracker.xlsx');
 mkdirSync(dirname(out), { recursive: true });
 const nameOf = (id: string | null) => users.find((u) => u.id === id)?.displayName ?? '';

@@ -17,7 +17,7 @@ import {
 import { Hono } from 'hono';
 import { body, idempotencyKey, requireUser, type AppEnv } from '../http/context';
 import { executeTransfer } from '../services/transfers';
-import { loadProject, mutateProject } from './project-helpers';
+import { loadProject, mutateProject, redactFinance } from './project-helpers';
 
 export const transferRoutes = new Hono<AppEnv>();
 
@@ -43,7 +43,7 @@ transferRoutes.post('/:id/transfers', async (c) => {
 
 transferRoutes.get('/:id/transfers/:tid', async (c) => {
   const { project, access, ctx } = await loadProject(c, c.req.param('id'));
-  const t = findTransfer(project, c.req.param('tid'));
+  const t = findTransfer(redactFinance(project, ctx.actor, ctx.today), c.req.param('tid'));
   const involved = [t.fromPmId, t.requestedBy, t.newPmId, t.proposedPmId].includes(ctx.actor.id);
   if (!involved && access !== 'portfolio' && access !== 'manager') throw forbidden();
   return c.json({

@@ -28,6 +28,7 @@ Rules:
 | ADR-016 | Web-only distribution; no app-store submission                                      | Accepted               |
 | ADR-017 | Account deactivation semantics                                                      | Accepted               |
 | ADR-018 | In-memory adapters and developer sign-in for local development only                 | Accepted               |
+| ADR-019 | Project finance: app record + seventh "Finance" tracker sheet                       | Accepted               |
 
 ---
 
@@ -220,3 +221,19 @@ Rules:
 - **Decision:** `apps/api/dev/server.ts` runs the real Hono app with in-memory adapters (OneDrive store emulating eTags, workbook gateway reading our own `.xlsx`, recording mailer/fake Outlook) and a developer sign-in listing **fictional** demo users. `loadConfig` refuses `DEV_AUTH=enabled` or `STORAGE_BACKEND=memory` outside `ENVIRONMENT=development`; the dev routes are not even registered otherwise; the production Worker refuses non-Graph storage.
 - **Risk:** Passing tests against in-memory adapters does **not** verify Microsoft integration. All docs state this.
 - **Validation:** tests prove dev sign-in is absent when disabled and that production config rejects it; Worker booted in `workerd` fails closed (503) without configuration.
+
+## ADR-019 — Project finance: app record + seventh "Finance" tracker sheet
+
+- **Date:** 2026-10-21
+- **Status:** Accepted. Extends ADR-008 (the six delivery sheets are unchanged).
+- **Context:** Chat360 asked for project finance in the tracker with four columns: _Amount Raised and Overdue (for Go-Live)_, _Amount that can be raised on immediate basis_, _Total_, _Amount to be raised_.
+- **Decision:**
+  - One finance record per project in `project.json` (`finance`: currency, the three entered amounts, remarks, updated at/by). Column names are used verbatim in the UI and Excel.
+  - **Total = Amount Raised and Overdue (for Go-Live) + Amount that can be raised on immediate basis**, computed in the app and as an Excel table formula; never entered. This is our reading of the column order (Total sits between the two "now" amounts and the future amount) — **to be confirmed by Chat360**; changing it is a one-line change in `financeTotal` and the `tblFinance` formula.
+  - A seventh sheet **Finance** with table `tblFinance`, synchronised with the same keyed, non-destructive rules as the other tables (ADR-006).
+  - Permissions: edit = PM, project Delivery Head, Delivery Head role, Sales POC; view = those plus the CSM. Tech Team, FDE, former PMs and administrators do not see figures in the app; amounts are also stripped from audit entries and transfer snapshots for them.
+  - Workbooks generated before this change have no Finance table: sync skips it, reports a schema notice, and keeps updating the other sheets.
+- **Alternatives considered:** per-invoice billing lines (more detail than requested; can be added later as another table); storing Total (risk of inconsistency); a separate finance workbook with tighter OneDrive permissions (stronger confidentiality, but the request was to add finance to the project tracker).
+- **Trade-offs/risks:** The tracker is readable by everyone with access to the project folder, so **the Finance sheet is visible to anyone who can open the workbook**, including technical staff. If that is not acceptable, the follow-up is to write finance to a separate restricted workbook (PRD-FIN-007). Excel sheet protection is not a confidentiality control and was not used.
+- **Affected:** `packages/core/src/finance.ts`, `rbac.ts`, `schemas.ts`, `analytics.ts`, `transfer.ts`, `workbook/*`; `apps/api/src/routes/projects.ts`, `routes/project-helpers.ts`, `services/workbook.ts`, `graph/workbook.ts`; `apps/web/src/components/FinanceTab.tsx`; `docs/prd.md` (PRD-FIN-\*), `docs/product.md`, `docs/api_guidelines.md`, `docs/security.md`.
+- **Validation performed:** core tests (totals, permissions, validation, stale edits, Excel row and formula, handover); API tests (edit rights, 422/403, redaction for tech staff incl. audit and transfer snapshot, analytics per currency, Excel sync, old workbook without Finance); Graph contract test (missing table 404 skipped, 500 still fails); Playwright e2e (Sales POC edits, Tech cannot see the tab); sample workbook opened in openpyxl and LibreOffice, which computed Total correctly. **Pending:** Excel for the web in the Chat360 tenant; Chat360 confirmation of the Total definition and of who may see finance.

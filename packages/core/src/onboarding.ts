@@ -54,7 +54,8 @@ const BY_ROLE: Partial<Record<GlobalRole, OnboardingStep[]>> = {
     {
       id: 'pm_create_project',
       title: 'Create a project',
-      description: 'The wizard generates the six-sheet Excel tracker in OneDrive.',
+      description:
+        'The wizard generates the Excel tracker (six delivery sheets plus Finance) in OneDrive.',
       required: false,
       verifiedBySystem: false,
       route: '/projects/new',

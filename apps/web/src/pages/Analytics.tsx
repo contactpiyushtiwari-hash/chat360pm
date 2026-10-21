@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import type { DeliveryAnalytics } from '@chat360/core';
-import { fmtDate, pct } from '../lib/format';
+import { fmtDate, fmtMoney, pct } from '../lib/format';
+import { FINANCE_LABELS } from '../components/FinanceTab';
 import { useResource } from '../lib/hooks';
 import { useSession } from '../lib/session';
 import { Badge, Card, EmptyState, ErrorState, PageHeader, Skeleton } from '../components/ui';
@@ -181,6 +182,39 @@ export function AnalyticsPage() {
                 reason’s configured side).
               </p>
             </Card>
+            {a.finance.length > 0 && (
+              <Card title="Finance (projects whose figures you can see)">
+                <div className="table-wrap">
+                  <table className="table compact-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Currency</th>
+                        <th scope="col">{FINANCE_LABELS.raisedOverdue}</th>
+                        <th scope="col">{FINANCE_LABELS.raisable}</th>
+                        <th scope="col">{FINANCE_LABELS.total}</th>
+                        <th scope="col">{FINANCE_LABELS.toBeRaised}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {a.finance.map((f) => (
+                        <tr key={f.currency}>
+                          <td>
+                            {f.currency} ({f.projects})
+                          </td>
+                          <td>{fmtMoney(f.raisedOverdueForGoLive, f.currency)}</td>
+                          <td>{fmtMoney(f.raisableImmediately, f.currency)}</td>
+                          <td>{fmtMoney(f.total, f.currency)}</td>
+                          <td>{fmtMoney(f.toBeRaised, f.currency)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="hint">
+                  Sums of each project’s Finance figures; currencies are never converted or mixed.
+                </p>
+              </Card>
+            )}
             <Card title="Escalations, APIs, UAT and transfers">
               <ul className="compact">
                 <li>

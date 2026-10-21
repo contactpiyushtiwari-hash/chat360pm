@@ -1,6 +1,7 @@
 import { calendarOf, recordAudit, touch, type DomainContext } from './context';
 import { addDays, daysBetween, weekStart } from './dates';
 import { forbidden, invalid } from './errors';
+import { emptyFinance } from './finance';
 import { newProjectId, randomId } from './ids';
 import { accessSubjectOf, can, canCreateProject, taskOwnerIdsOf, teamMemberIds } from './rbac';
 import type { CreateProjectInput, UpdateProjectInput, UpdateTeamInput } from './schemas';
@@ -89,6 +90,7 @@ export function createProject(
     transfers: [],
     documents: [],
     communications: [],
+    finance: emptyFinance(),
     workbook: {
       driveItemId: null,
       webUrl: null,

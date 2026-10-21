@@ -96,7 +96,7 @@ export function ProjectNewPage() {
     <div className="narrow">
       <PageHeader
         title="New project"
-        subtitle="The wizard creates the project and its six-sheet Excel tracker in the approved OneDrive location."
+        subtitle="The wizard creates the project and its Excel tracker in the approved OneDrive location."
       />
       <ol className="stepper" aria-label="Progress">
         {STEPS.map((s, i) => (

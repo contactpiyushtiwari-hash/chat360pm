@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { HandoverSummary } from '@chat360/core';
 import { post } from '../lib/api';
-import { fmtDate } from '../lib/format';
+import { fmtDate, fmtMoney } from '../lib/format';
+import { FINANCE_LABELS } from './FinanceTab';
 import { useAction, useResource } from '../lib/hooks';
 import { useSession } from '../lib/session';
 import {
@@ -126,6 +127,28 @@ export function HandoverView({ h }: { h: HandoverSummary }) {
             </li>
           ))}
         </ul>,
+      )}
+      {h.finance && (
+        <details className="handover-section">
+          <summary>Finance</summary>
+          <ul className="compact">
+            <li>
+              {FINANCE_LABELS.raisedOverdue}:{' '}
+              {fmtMoney(h.finance.raisedOverdueForGoLive, h.finance.currency)}
+            </li>
+            <li>
+              {FINANCE_LABELS.raisable}:{' '}
+              {fmtMoney(h.finance.raisableImmediately, h.finance.currency)}
+            </li>
+            <li>
+              {FINANCE_LABELS.total}: {fmtMoney(h.finance.total, h.finance.currency)}
+            </li>
+            <li>
+              {FINANCE_LABELS.toBeRaised}: {fmtMoney(h.finance.toBeRaised, h.finance.currency)}
+            </li>
+            {h.finance.remarks && <li>{h.finance.remarks}</li>}
+          </ul>
+        </details>
       )}
     </div>
   );

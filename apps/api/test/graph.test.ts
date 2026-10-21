@@ -333,3 +333,45 @@ describe('redaction', () => {
     });
   });
 });
+
+describe('GraphWorkbookGateway missing tables', () => {
+  it('omits a table that returns 404 but still fails on other errors', async () => {
+    const respond = (status: number) =>
+      mockFetch((c) => {
+        if (c.url.endsWith('/createSession')) return json(201, { id: 's' });
+        if (c.url.endsWith('/closeSession')) return new Response(null, { status: 204 });
+        return json(200, {
+          responses: [
+            {
+              id: 'tblWBS',
+              status: 200,
+              body: { address: 'WBS!A5:A6', formulas: [['WBS ID'], ['1']] },
+            },
+            {
+              id: 'tblFinance',
+              status,
+              body: {
+                error: {
+                  code: status === 404 ? 'ItemNotFound' : 'InternalServerError',
+                  message: 'x',
+                },
+              },
+            },
+          ],
+        });
+      });
+    const ok = respond(404);
+    const tables = await new GraphWorkbookGateway(client(ok.fetchImpl), 'd').readTables('i', [
+      'tblWBS',
+      'tblFinance',
+    ]);
+    expect(tables.map((t) => t.name)).toEqual(['tblWBS']);
+    const bad = respond(500);
+    await expect(
+      new GraphWorkbookGateway(client(bad.fetchImpl), 'd').readTables('i', [
+        'tblWBS',
+        'tblFinance',
+      ]),
+    ).rejects.toBeInstanceOf(GraphError);
+  });
+});

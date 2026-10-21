@@ -308,6 +308,24 @@ export interface TransferStep {
   error?: string;
 }
 
+/**
+ * Project billing position, entered by the PM / Sales POC. Amounts are in `currency` units.
+ * Total = raisedOverdueForGoLive + raisableImmediately (computed, never stored).
+ */
+export interface ProjectFinance {
+  /** ISO 4217 code, e.g. INR. */
+  currency: string;
+  /** Amount raised and overdue (for go-live). */
+  raisedOverdueForGoLive: number;
+  /** Amount that can be raised on an immediate basis. */
+  raisableImmediately: number;
+  /** Amount still to be raised. */
+  toBeRaised: number;
+  remarks: string;
+  updatedAt: IsoInstant | null;
+  updatedBy: UserId | null;
+}
+
 export interface HandoverSummary {
   generatedAt: IsoInstant;
   health: ProjectHealth;
@@ -326,6 +344,7 @@ export interface HandoverSummary {
   openEscalations: { id: string; taskId: string; severity: Severity; reason: string }[];
   documents: { label: string; url: string }[];
   blockers: { id: string; title: string; blocker: string }[];
+  finance?: ProjectFinance & { total: number };
 }
 
 export interface TransferRequest {
@@ -446,6 +465,8 @@ export interface Project {
   escalations: Escalation[];
   transfers: TransferRequest[];
   documents: ProjectDocument[];
+  /** Commercial position for billing. Absent on documents created before finance tracking. */
+  finance?: ProjectFinance;
   communications: CommunicationRef[];
   workbook: WorkbookState;
   audit: AuditEntry[];

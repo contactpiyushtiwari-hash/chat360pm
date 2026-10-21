@@ -188,4 +188,30 @@ test.describe.serial('core workflows (desktop)', () => {
     await page.getByRole('button', { name: 'Send email' }).click();
     await expect(page.getByText('Outlook accepted the email for delivery.')).toBeVisible();
   });
+
+  test('Sales POC updates project finance; technical staff do not see it', async ({ page }) => {
+    await signInAs(page, /Sam Sales/);
+    await nav(page, 'Projects');
+    await page.getByRole('link', { name: /Northwind Retail/ }).click();
+    await page.getByRole('tab', { name: 'Finance' }).click();
+    await expect(
+      page.getByText('Amount Raised and Overdue (for Go-Live)', { exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Update figures' }).click();
+    const d = page.getByRole('dialog', { name: 'Update finance' });
+    await d.getByLabel('Amount Raised and Overdue (for Go-Live)').fill('425000');
+    await d.getByLabel('Amount that can be raised on immediate basis').fill('75000');
+    await d.getByLabel('Amount to be raised').fill('900000');
+    await expect(d.getByText('₹5,00,000.00')).toBeVisible();
+    await d.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByText('Finance updated.')).toBeVisible();
+    await expect(page.getByText('₹9,00,000.00')).toBeVisible();
+    await shot(page, 'project-finance');
+
+    await signInAs(page, /Tara Tech/);
+    await nav(page, 'Projects');
+    await page.getByRole('link', { name: /Northwind Retail/ }).click();
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Finance' })).toHaveCount(0);
+  });
 });

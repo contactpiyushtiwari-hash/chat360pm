@@ -100,10 +100,29 @@ export async function afterProjectWrite(
 }
 
 /** Project for the browser: internal bookkeeping removed, plus the caller's permissions. */
+/**
+ * Removes commercial figures for callers who may not see them: the finance record itself, the
+ * amounts recorded in finance audit entries, and the finance block of transfer handover snapshots.
+ */
+export function redactFinance(project: Project, user: DirectoryUser, today: string): Project {
+  if (can(user, 'finance.view', accessSubjectOf(project), today)) return project;
+  const { finance: _f, ...rest } = project;
+  return {
+    ...rest,
+    audit: project.audit.map((a) =>
+      a.action === 'finance.updated' ? { ...a, details: { fields: a.details?.fields } } : a,
+    ),
+    transfers: project.transfers.map((t) => {
+      const { finance: _sf, ...snapshot } = t.snapshot;
+      return { ...t, snapshot };
+    }),
+  };
+}
+
 export function presentProject(project: Project, user: DirectoryUser, today: string) {
   const subject = accessSubjectOf(project);
   const access = projectAccess(user, subject, today);
-  const { appliedOperations: _a, workbook, ...rest } = project;
+  const { appliedOperations: _a, workbook, ...rest } = redactFinance(project, user, today);
   const { rowHashes: _h, ...wb } = workbook;
   return {
     ...rest,
@@ -112,6 +131,8 @@ export function presentProject(project: Project, user: DirectoryUser, today: str
     access,
     permissions: {
       edit: can(user, 'project.edit', subject, today),
+      viewFinance: can(user, 'finance.view', subject, today),
+      editFinance: can(user, 'finance.edit', subject, today),
       editTeam: can(user, 'project.team.edit', subject, today),
       createTask: can(user, 'task.create', subject, today),
       manageApis: can(user, 'api.manage', subject, today),

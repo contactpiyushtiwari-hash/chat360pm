@@ -28,7 +28,7 @@ function errorText(err: unknown) {
   return redactText(err instanceof Error ? `${err.name}: ${err.message}` : String(err), 300);
 }
 
-/** Generates the six-sheet tracker and uploads it next to project.json. Never overwrites a file. */
+/** Generates the tracker (six delivery sheets + Finance) and uploads it next to project.json. Never overwrites a file. */
 export async function createWorkbook(deps: Deps, projectId: string): Promise<WorkbookOutcome> {
   const project = await deps.repos.project(projectId);
   if (!project) return { status: 'failed', error: 'Project not found' };
@@ -140,7 +140,19 @@ async function syncOnce(
     const plans = new Map<string, SyncPlan>();
     const writes: WorkbookWrite[] = [];
     for (const def of defs) {
-      const snap = tables.find((t) => t.name === def.name)!;
+      const snap = tables.find((t) => t.name === def.name);
+      if (!snap) {
+        const missing = planTableSync(
+          def,
+          { headers: [], rows: [], firstDataRow: 0 },
+          [],
+          project.workbook.rowHashes,
+          { now },
+        );
+        missing.schemaError = `The "${def.sheet}" sheet (${def.name}) is not in this workbook, which was created before it existed. Other sheets are still updated.`;
+        plans.set(def.name, missing);
+        continue;
+      }
       const tableForce = new Set(
         [...force]
           .filter((k) => k.startsWith(`${def.name}:`))

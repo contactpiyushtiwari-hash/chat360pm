@@ -124,6 +124,8 @@ export type ProjectAction =
   | 'workbook.resolve_conflict'
   | 'communication.log'
   | 'transfer.request'
+  | 'finance.view'
+  | 'finance.edit'
   | 'transfer.review'
   | 'pm.reassign';
 
@@ -139,6 +141,8 @@ const REQUIRED: Record<ProjectAction, ProjectAccessLevel> = {
   'workbook.resolve_conflict': 'manager',
   'communication.log': 'contributor',
   'transfer.request': 'manager',
+  'finance.view': 'contributor',
+  'finance.edit': 'contributor',
   'transfer.review': 'portfolio',
   'pm.reassign': 'portfolio',
 };
@@ -153,6 +157,12 @@ export function can(
   if (RANK[level] < RANK[REQUIRED[action]]) return false;
   // Only the current PM may raise a transfer for their own project.
   if (action === 'transfer.request') return subject.pmId === user.id;
+  // Commercial figures: contributors see them only as Sales POC or CSM, and only Sales POC edits.
+  if ((action === 'finance.view' || action === 'finance.edit') && level === 'contributor') {
+    if (!subject.team) return false;
+    const roles = projectRolesOf(subject.team, user.id);
+    return roles.includes('sales_poc') || (action === 'finance.view' && roles.includes('csm'));
+  }
   // API records are technical work: limit contributors to tech / FDE / PM roles.
   if (action === 'api.manage' && level === 'contributor') {
     if (!subject.team) return false;

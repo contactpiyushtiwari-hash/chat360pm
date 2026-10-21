@@ -29,20 +29,21 @@ describe('tracker generation', () => {
   const files = unzipSync(generateTracker(p, opts));
   const text = (name: string) => strFromU8(files[name]!);
 
-  it('has exactly the six required sheets in order', () => {
+  it('has the six required sheets plus Finance, in order', () => {
     const names = [...text('xl/workbook.xml').matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1]);
     expect(names).toEqual([...SHEETS]);
   });
 
   it('defines one Excel table per data set with stable names', () => {
     const tables = Object.keys(files).filter((f) => f.startsWith('xl/tables/'));
-    expect(tables).toHaveLength(7);
+    expect(tables).toHaveLength(8);
     const names = tables.map((f) => /name="(tbl\w+)"/.exec(text(f))![1]);
     expect(names.sort()).toEqual(
       [
         'tblAPIs',
         'tblEscalationLog',
         'tblEscalationMatrix',
+        'tblFinance',
         'tblGantt',
         'tblLastWeek',
         'tblThisWeek',

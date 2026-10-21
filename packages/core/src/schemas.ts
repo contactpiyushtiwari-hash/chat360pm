@@ -351,3 +351,26 @@ export const productEventSchema = z.object({
   name: z.enum(PRODUCT_EVENTS),
   props: z.record(z.union([z.string().max(100), z.number(), z.boolean()])).default({}),
 });
+
+const money = z
+  .number()
+  .finite()
+  .min(0, 'Amount cannot be negative')
+  .max(1e12, 'Amount is too large')
+  .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, 'Use at most 2 decimal places');
+
+export const updateFinanceSchema = z
+  .object({
+    currency: z
+      .string()
+      .trim()
+      .regex(/^[A-Z]{3}$/, 'Use a 3-letter currency code, e.g. INR'),
+    raisedOverdueForGoLive: money,
+    raisableImmediately: money,
+    toBeRaised: money,
+    remarks: text(1000).default(''),
+    /** Optimistic concurrency: the finance `updatedAt` the client last saw. */
+    expectedUpdatedAt: z.string().max(40).nullable().optional(),
+  })
+  .strict();
+export type UpdateFinanceInput = z.infer<typeof updateFinanceSchema>;

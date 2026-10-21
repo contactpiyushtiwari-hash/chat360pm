@@ -51,6 +51,7 @@ export interface CellWrite {
 
 /** Excel workbook operations on an existing OneDrive item. */
 export interface WorkbookGateway {
+  /** Returns the tables that exist; tables missing from the workbook are omitted. */
   readTables(itemId: string, tables: string[]): Promise<WorkbookTable[]>;
   /** Applies writes; returns per-table success so partial failures are visible. */
   write(

@@ -138,10 +138,9 @@ export class MemoryWorkbookGateway implements WorkbookGateway {
 
   async readTables(itemId: string, tables: string[]) {
     const wb = this.load(itemId);
-    return tables.map((name) => {
+    return tables.flatMap((name) => {
       const t = wb.find((x) => x.name === name);
-      if (!t) throw new Error(`Table ${name} not found`);
-      return structuredClone(t);
+      return t ? [structuredClone(t)] : [];
     });
   }
 
@@ -156,6 +155,15 @@ export class MemoryWorkbookGateway implements WorkbookGateway {
       for (const a of w.appends) t.rows.push([...a]);
       return { table: w.table, ok: true };
     });
+  }
+
+  /** Test helper: simulate a workbook generated before a table existed. */
+  dropTable(itemId: string, table: string) {
+    const wb = this.load(itemId);
+    this.workbooks.set(
+      itemId,
+      wb.filter((t) => t.name !== table),
+    );
   }
 
   /** Test helper: simulate a person editing a cell in Excel. */
