@@ -37,7 +37,6 @@ portfolioRoutes.get('/today', async (c) => {
       projectId: p.id,
       projectName: p.name,
       clientName: p.clientName,
-      workbookState: p.workbook.state,
     };
     for (const t of tasksNeedingDecision(p, user.id, ctx.today)) {
       due.push({ ...head, task: t, due: currentDue(t), overdue: currentDue(t) < ctx.today });

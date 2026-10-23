@@ -3,8 +3,8 @@ import type { Env } from '../env';
 import type { Coordination, JobRun, SessionRecord, SessionStore } from '../ports';
 
 /**
- * Coordination state only (ADR-003): sessions with encrypted Microsoft tokens, rate-limit
- * counters, leases, short-lived idempotency keys and a job-run ledger. No business record lives
+ * Coordination state only (ADR-003): sessions, rate-limit counters, leases, short-lived
+ * idempotency keys and a job-run ledger. No business record lives
  * here; losing this storage signs users out and resets counters, nothing more.
  * A single named instance is sufficient for an internal employee population.
  */
@@ -183,9 +183,6 @@ export class DurableSessionStore implements SessionStore {
   }
   async touch(id: string, now: number) {
     await this.stub.sessionUpdate(id, { lastSeenAt: now });
-  }
-  async setTokens(id: string, tokens: string, scopes: string) {
-    await this.stub.sessionUpdate(id, { tokens, scopes });
   }
   async delete(id: string) {
     await this.stub.sessionDelete(id);

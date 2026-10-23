@@ -29,7 +29,6 @@ export function Layout() {
     { to: '/escalations', label: 'Escalations' },
     { to: '/transfers', label: 'Transfers' },
     { to: '/analytics', label: 'Analytics' },
-    { to: '/calendar', label: 'Calendar' },
     { to: '/email', label: 'Email' },
     { to: '/support', label: 'Support' },
     { to: '/admin', label: 'Admin', show: me.permissions.admin },
@@ -37,10 +36,9 @@ export function Layout() {
 
   async function signOut() {
     try {
-      const r = await post<{ logoutUrl: string | null }>('/api/auth/logout');
+      await post('/api/auth/logout');
       await refresh();
-      if (r.logoutUrl) window.location.assign(r.logoutUrl);
-      else nav('/login?signedOut=1');
+      nav('/login?signedOut=1');
     } catch {
       nav('/login?signedOut=1');
     }
@@ -54,7 +52,7 @@ export function Layout() {
       {me.environment !== 'production' && (
         <div className="env-banner" role="note">
           {me.environment === 'development'
-            ? 'Development environment — emails and calendar actions are recorded, not sent.'
+            ? 'Development environment — in-memory demo data; nothing is sent.'
             : 'Staging environment'}
         </div>
       )}

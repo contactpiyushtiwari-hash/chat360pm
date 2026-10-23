@@ -57,12 +57,7 @@ export function buildHandoverSummary(
     openEscalations: project.escalations
       .filter((e) => e.status !== 'resolved')
       .map((e) => ({ id: e.id, taskId: e.taskId, severity: e.severity, reason: e.reason })),
-    documents: [
-      ...(project.workbook.webUrl
-        ? [{ label: 'Project tracker (Excel)', url: project.workbook.webUrl }]
-        : []),
-      ...project.documents.map((d) => ({ label: d.label, url: d.url })),
-    ],
+    documents: project.documents.map((d) => ({ label: d.label, url: d.url })),
     blockers: open
       .filter((t) => t.blocker.trim())
       .map((t) => ({ id: t.id, title: t.title, blocker: t.blocker })),
@@ -122,7 +117,6 @@ function initialSteps(): TransferStep[] {
   return [
     { name: 'assign_pm', required: true, status: 'pending', attempts: 0 },
     { name: 'update_index', required: true, status: 'pending', attempts: 0 },
-    { name: 'sync_workbook', required: false, status: 'pending', attempts: 0 },
     { name: 'notify', required: false, status: 'pending', attempts: 0 },
   ];
 }
@@ -403,7 +397,7 @@ export function recordStepOutcome(
 
 /**
  * Marks the transfer completed only when every required step succeeded. Optional steps
- * (workbook sync, notifications) stay visible with their own status.
+ * (notifications) stay visible with their own status.
  */
 export function completeIfReady(
   project: Project,

@@ -1,8 +1,6 @@
-import type { TableSnapshot } from '@chat360/core/workbook';
-
 /**
- * Ports: everything the application needs from the outside world. Production adapters talk to
- * Microsoft Graph and the Coordinator Durable Object; development/test adapters are in-memory.
+ * Ports: everything the application needs from the outside world. Production adapters use
+ * Cloudflare D1 and the Coordinator Durable Object; development/test adapters are in-memory.
  */
 
 export interface StoredDoc<T> {
@@ -12,74 +10,33 @@ export interface StoredDoc<T> {
 
 export type WriteCondition = { ifMatch: string } | { ifNoneMatch: '*' };
 
-/** Thrown when a conditional write loses a race (HTTP 412 / 409 from OneDrive). */
+/** Thrown when a conditional write loses a race (the document changed since it was read). */
 export class PreconditionFailedError extends Error {
   override name = 'PreconditionFailedError';
 }
 
-/** JSON documents and files in the authorised OneDrive location. Paths are relative to the root. */
+/** JSON documents keyed by path. */
 export interface DocStore {
   getJson<T>(path: string): Promise<StoredDoc<T> | null>;
   putJson<T>(path: string, data: T, condition: WriteCondition): Promise<{ etag: string }>;
-  putFile(
-    path: string,
-    bytes: Uint8Array,
-    contentType: string,
-    condition: WriteCondition,
-  ): Promise<{ itemId: string; webUrl: string; etag: string }>;
-  /** Immediate child folder names of a folder (for reconciliation). */
+  /** Immediate child "folder" names under a path prefix (for reconciliation). */
   listFolders(path: string): Promise<string[]>;
-}
-
-export interface WorkbookTable extends TableSnapshot {
-  name: string;
-  sheet: string;
-}
-
-export interface WorkbookWrite {
-  sheet: string;
-  table: string;
-  patches: { row: number; values: unknown[] }[];
-  appends: unknown[][];
-}
-
-export interface CellWrite {
-  sheet: string;
-  address: string;
-  values: unknown[][];
-}
-
-/** Excel workbook operations on an existing OneDrive item. */
-export interface WorkbookGateway {
-  /** Returns the tables that exist; tables missing from the workbook are omitted. */
-  readTables(itemId: string, tables: string[]): Promise<WorkbookTable[]>;
-  /** Applies writes; returns per-table success so partial failures are visible. */
-  write(
-    itemId: string,
-    writes: WorkbookWrite[],
-    cells: CellWrite[],
-  ): Promise<{ table: string; ok: boolean; error?: string }[]>;
 }
 
 export interface SessionRecord {
   /** SHA-256 of the cookie value; the raw value is never stored. */
   id: string;
   userId: string;
-  tenantId: string;
   createdAt: number;
   expiresAt: number;
   lastSeenAt: number;
   authTime: number;
-  /** AES-GCM encrypted Microsoft tokens (delegated), if any. */
-  tokens: string | null;
-  scopes: string;
 }
 
 export interface SessionStore {
   create(record: SessionRecord): Promise<void>;
   get(id: string): Promise<SessionRecord | null>;
   touch(id: string, now: number): Promise<void>;
-  setTokens(id: string, tokens: string, scopes: string): Promise<void>;
   delete(id: string): Promise<void>;
   deleteForUser(userId: string): Promise<number>;
 }
@@ -118,61 +75,16 @@ export interface MailMessage {
   body: string;
 }
 
-/** Outcome of a Graph send: `accepted` means Graph returned 202; delivery itself is not confirmed. */
+/** Outcome of a send: `accepted` means the provider took the message; delivery is not confirmed. */
 export type SendOutcome =
   | { status: 'accepted' }
   | { status: 'not_configured'; reason: string }
   | { status: 'failed'; error: string; retryable: boolean };
 
-/** App-only notification mail from the approved shared mailbox. */
+/** Notification mail. No provider is configured yet, so every send reports `not_configured`. */
 export interface Mailer {
   readonly configured: boolean;
   send(message: MailMessage): Promise<SendOutcome>;
-}
-
-export interface GraphProfile {
-  id: string;
-  displayName: string;
-  mail: string | null;
-  userPrincipalName: string;
-  userType: string | null;
-  accountEnabled: boolean | null;
-}
-
-export interface CalendarEvent {
-  id: string;
-  subject: string;
-  start: string;
-  end: string;
-  timeZone: string;
-  location: string;
-  attendees: { email: string; name: string; response: string }[];
-  isOnline: boolean;
-  joinUrl: string | null;
-  webLink: string | null;
-  isCancelled: boolean;
-  organizer: string;
-}
-
-export interface NewEvent {
-  subject: string;
-  start: string;
-  end: string;
-  timeZone: string;
-  attendees: string[];
-  body: string;
-  location: string;
-  online: boolean;
-}
-
-/** Delegated Microsoft Graph operations performed as the signed-in employee. */
-export interface UserGraph {
-  getProfile(): Promise<GraphProfile>;
-  sendMail(message: MailMessage): Promise<SendOutcome>;
-  listEvents(startIso: string, endIso: string, timeZone: string): Promise<CalendarEvent[]>;
-  createEvent(event: NewEvent): Promise<CalendarEvent>;
-  updateEvent(id: string, patch: Partial<NewEvent>): Promise<CalendarEvent>;
-  cancelEvent(id: string, comment: string): Promise<void>;
 }
 
 export interface AnalyticsSink {

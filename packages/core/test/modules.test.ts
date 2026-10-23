@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   addApiDependency,
   applyOnboardingUpdate,
-  classifyRecipients,
   computeAnalytics,
   confirmTask,
   createSupportRequest,
@@ -116,24 +115,13 @@ describe('API dependencies', () => {
 describe('onboarding', () => {
   it('is incomplete until required and system-verified steps are done', () => {
     const u = user('n1', []);
-    expect(onboardingStatus(u, { outlookConsent: false }).missingRequired).toEqual([
-      'welcome',
-      'role_assigned',
-    ]);
-    applyOnboardingUpdate(u, ['welcome', 'role_assigned'], ['welcome'], 'now', {
-      outlookConsent: false,
-    });
+    expect(onboardingStatus(u).missingRequired).toEqual(['welcome', 'role_assigned']);
+    applyOnboardingUpdate(u, ['welcome', 'role_assigned'], ['welcome'], 'now');
     // role_assigned is system-verified and cannot be self-ticked; required steps cannot be skipped.
-    expect(onboardingStatus(u, { outlookConsent: false }).complete).toBe(false);
+    expect(onboardingStatus(u).complete).toBe(false);
     expect(u.onboarding.skippedSteps).toEqual([]);
     const pm = user('p', ['pm']);
-    const s = applyOnboardingUpdate(
-      pm,
-      ['welcome', 'pm_daily'],
-      ['workbook_access', 'outlook_consent'],
-      'now',
-      { outlookConsent: false },
-    );
+    const s = applyOnboardingUpdate(pm, ['welcome', 'pm_daily'], ['pm_create_project'], 'now');
     expect(s.complete).toBe(true);
     expect(pm.onboarding.completedAt).toBe('now');
   });
@@ -208,11 +196,7 @@ describe('account deactivation', () => {
 });
 
 describe('communications', () => {
-  it('renders templates and flags external recipients', () => {
+  it('renders templates, leaving unknown placeholders empty', () => {
     expect(renderTemplate('Hi {{client}} {{missing}}', { client: 'Acme' })).toBe('Hi Acme ');
-    expect(classifyRecipients(['a@chat.io', 'b@acme.com'], ['chat.io'])).toEqual({
-      internal: ['a@chat.io'],
-      external: ['b@acme.com'],
-    });
   });
 });

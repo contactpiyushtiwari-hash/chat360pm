@@ -16,7 +16,6 @@ import {
   escalationActionSchema,
   forbidden,
   indexEntryOf,
-  invalid,
   projectAccess,
   resolveEscalation,
   resolveEscalationSchema,
@@ -32,13 +31,11 @@ import {
   updateFinanceSchema,
   can,
   PROJECT_TEMPLATES,
-  recordAudit,
 } from '@chat360/core';
 import { Hono } from 'hono';
-import { z } from 'zod';
-import { domainContext } from '../deps';
+import { generateTracker } from '@chat360/core/workbook';
+import { domainContext, nameResolver } from '../deps';
 import { body, idempotencyKey, limit, requireUser, type AppEnv } from '../http/context';
-import { createWorkbook, syncWorkbook } from '../services/workbook';
 import { loadProject, mutateProject, presentProject, redactFinance } from './project-helpers';
 
 export const projectRoutes = new Hono<AppEnv>();
@@ -116,11 +113,7 @@ projectRoutes.post('/', async (c) => {
   }
   await deps.coord.store(memoKey, project.id, 24 * 3600);
   deps.analytics.track('project_created', { projectId: project.id, role: user.roles[0] ?? '' });
-
-  // Workbook generation is part of creation; its failure is reported, not hidden, and can be retried.
-  const workbook = await createWorkbook(deps, project.id);
-  const saved = (await deps.repos.project(project.id)) ?? project;
-  return c.json({ project: presentProject(saved, user, ctx.today), workbook }, 201);
+  return c.json({ project: presentProject(project, user, ctx.today) }, 201);
 });
 
 projectRoutes.get('/:id', async (c) => {
@@ -195,11 +188,8 @@ projectRoutes.patch('/:id/tasks/:taskId', async (c) => {
 
 projectRoutes.post('/:id/tasks/:taskId/comments', async (c) => {
   const input = await body(c, commentSchema);
-  const { result } = await mutateProject(
-    c,
-    c.req.param('id'),
-    (p, ctx) => addComment(p, c.req.param('taskId'), input.body, input.evidenceUrl, ctx),
-    { skipSync: true },
+  const { result } = await mutateProject(c, c.req.param('id'), (p, ctx) =>
+    addComment(p, c.req.param('taskId'), input.body, input.evidenceUrl, ctx),
   );
   return c.json({ comment: result }, 201);
 });
@@ -222,7 +212,6 @@ projectRoutes.post('/:id/tasks/:taskId/confirm', async (c) => {
     confirmation: result?.confirmation,
     escalation: result?.escalation ?? null,
     task: project.tasks.find((t) => t.id === c.req.param('taskId')),
-    workbook: { state: project.workbook.driveItemId ? 'pending' : project.workbook.state },
   });
 });
 
@@ -268,39 +257,23 @@ projectRoutes.post('/:id/escalations/:escId/resolve', async (c) => {
   return c.json({ escalation: result });
 });
 
-// Workbook
-projectRoutes.post('/:id/workbook', async (c) => {
-  const { project, ctx } = await loadProject(c, c.req.param('id'), 'contributor');
-  if (!can(ctx.actor, 'workbook.sync', accessSubjectOf(project), ctx.today)) throw forbidden();
-  await limit(c, `workbook:${project.id}`, 10, 600);
-  const outcome = await createWorkbook(c.get('deps'), project.id);
-  return c.json({ workbook: outcome }, outcome.status === 'failed' ? 502 : 200);
-});
-
-projectRoutes.post('/:id/workbook/sync', async (c) => {
-  const { project, ctx } = await loadProject(c, c.req.param('id'), 'contributor');
-  if (!can(ctx.actor, 'workbook.sync', accessSubjectOf(project), ctx.today)) throw forbidden();
-  await limit(c, `workbook:${project.id}`, 10, 600);
-  const outcome = await syncWorkbook(c.get('deps'), project.id, { refresh: true });
-  return c.json({ workbook: outcome }, outcome.status === 'failed' ? 502 : 200);
-});
-
-projectRoutes.post('/:id/workbook/conflicts/resolve', async (c) => {
-  const { keys } = await body(
-    c,
-    z.object({
-      keys: z.array(z.string().max(120)).min(1).max(200),
-      resolution: z.literal('use_app'),
-    }),
-  );
-  const { project, ctx } = await loadProject(c, c.req.param('id'), 'manager');
-  if (!can(ctx.actor, 'workbook.resolve_conflict', accessSubjectOf(project), ctx.today))
-    throw forbidden();
-  const known = new Set(project.workbook.conflicts.map((x) => x.key));
-  if (keys.some((k) => !known.has(k))) throw invalid('Unknown conflict.');
-  const outcome = await syncWorkbook(c.get('deps'), project.id, { force: keys });
-  await c.get('deps').repos.updateProject(project.id, (p) => {
-    recordAudit(p, ctx.actor.id, ctx.now, 'workbook.conflicts_overwritten', project.id, { keys });
+/** The Excel tracker, generated on demand from the current project (ADR-021). */
+projectRoutes.get('/:id/tracker.xlsx', async (c) => {
+  const { project, ctx } = await loadProject(c, c.req.param('id'));
+  if (!can(ctx.actor, 'tracker.download', accessSubjectOf(project), ctx.today)) throw forbidden();
+  const deps = c.get('deps');
+  await limit(c, `tracker:${ctx.actor.id}`, 30, 600);
+  const directory = await deps.repos.directory();
+  const bytes = generateTracker(redactFinance(project, ctx.actor, ctx.today), {
+    config: ctx.config,
+    today: ctx.today,
+    nameOf: nameResolver(directory.users),
+    generatedAt: ctx.now,
   });
-  return c.json({ workbook: outcome });
+  const name = `${project.clientName} - ${project.name} - Tracker.xlsx`.replace(/[^\w .-]+/g, '_');
+  deps.analytics.track('tracker_downloaded', { projectId: project.id });
+  return c.body(bytes as Uint8Array<ArrayBuffer>, 200, {
+    'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'Content-Disposition': `attachment; filename="${name}"`,
+  });
 });

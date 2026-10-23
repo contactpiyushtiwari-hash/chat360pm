@@ -1,6 +1,6 @@
 # Infrastructure
 
-**Implemented** = code and configuration exist in this repository. **Provisioned** = actually created in Chat360's Cloudflare/Microsoft accounts. **Nothing is provisioned yet**: no Cloudflare account or Microsoft tenant access was available while building.
+**Implemented** = code and configuration exist in this repository. **Provisioned** = actually created in Chat360's Cloudflare account. **Nothing is provisioned yet.**
 
 ## Architecture
 
@@ -8,104 +8,90 @@
 Browser (React SPA)
    │  same origin: https://<app>/...
    ▼
-Cloudflare Pages ── static SPA (apps/web/dist) + _headers (CSP, HSTS)
-   │  /api/*  → Pages Function (functions/api/[[path]].ts)
-   │            service binding "API"
-   ▼
-API Worker (apps/api, Hono) ──────────────┬─► Coordinator Durable Object (SQLite)
-   │  fetch() + scheduled() (Cron)         │     sessions, rate limits, leases,
-   │                                       │     idempotency memos, job ledger
-   │                                       └─► Workers Analytics Engine (product events)
-   ▼
-Microsoft Graph
-   ├─ app-only:  Sites.Selected → SharePoint/OneDrive library (project.json, _system/*.json, *.xlsx, workbook API)
-   │             Mail.Send (restricted) → notification mailbox
-   └─ delegated: User.Read (sign-in), Mail.Send + Calendars.ReadWrite (as the user, on consent)
+Worker "chat360pm" (root wrangler.toml, ADR-020)
+   ├─ static assets: apps/web/dist + _headers (CSP, HSTS), SPA fallback
+   └─ /api/* → Hono app (apps/api) ── fetch() + scheduled() (Cron)
+          ├─► D1 database "chat360pm" (binding DB): all business documents (ADR-021)
+          └─► Coordinator Durable Object (SQLite): sessions, rate limits, leases,
+                                                  idempotency memos, job ledger
 ```
 
-No VPS, container, database server, object storage or paid third-party service is used.
-
-**Deployment shapes (ADR-020):** the diagram shows the two-project setup (Pages + API Worker). Alternatively the root `wrangler.toml` deploys a single Worker, `chat360pm`, that serves the same SPA as static assets and runs the same API code for `/api/*`; this is what a Git-connected Workers Build uses.
+No VPS, container, external database, object storage, Microsoft 365 or paid third-party service is used. Everything fits the Cloudflare Workers free plan (see §Capacity).
 
 ## Components
 
-| Component         | Implementation                                                                                     | Status                                                          |
-| ----------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| SPA hosting       | Cloudflare Pages project `chat360-ops-web` (`apps/web/wrangler.toml`)                              | Implemented, not provisioned                                    |
-| API proxy         | Pages Function → service binding `API` (preview → staging Worker, production → production Worker)  | Implemented                                                     |
-| API               | Worker `chat360-ops-api[-staging                                                                   | -production]` (`apps/api/wrangler.toml`), `workers_dev = false` | Implemented; bundles (`wrangler deploy --dry-run`) and boots in `workerd` |
-| Scheduling        | Cron Triggers `30 3 * * *`, `30 13 * * *`, `15 * * * *` (UTC)                                      | Implemented                                                     |
-| Coordination      | Durable Object `Coordinator` (SQLite backend, migration `v1`), single named instance `global`      | Implemented; exercised in `workerd`                             |
-| Product analytics | Analytics Engine dataset `chat360_ops_events`                                                      | Implemented (falls back to logs if unbound)                     |
-| Logs              | Workers Logs (`[observability] enabled`, 100% head sampling)                                       | Implemented                                                     |
-| Storage           | SharePoint/OneDrive drive `GRAPH_DRIVE_ID` under `ONEDRIVE_ROOT_PATH`                              | Implemented; **site/library to be chosen by IT**                |
-| Identity          | Entra ID app registration (single tenant, confidential, redirect `<APP_ORIGIN>/api/auth/callback`) | Pending                                                         |
-| CI/CD             | GitHub Actions `ci.yml` (checks) and `deploy.yml` (manual, gated)                                  | Implemented; deploy needs secrets                               |
+| Component         | Implementation                                                                                 | Status                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Website + API     | One Worker `chat360pm`, static assets + `run_worker_first = ["/api/*"]`                        | Implemented; bundles and runs in `wrangler dev` |
+| Storage           | D1 database `chat360pm`, table `docs(path, data, etag, updated_at)` created on first use       | Implemented; **database ID to be filled in**    |
+| Scheduling        | Cron Triggers `30 3 * * *`, `30 13 * * *`, `15 * * * *` (UTC)                                  | Implemented                                     |
+| Coordination      | Durable Object `Coordinator` (SQLite backend, migration `v1`), single named instance           | Implemented; exercised in `workerd`             |
+| Identity          | Email + password, admin-issued set-password links, first admin via `SETUP_CODE` (ADR-022)      | Implemented                                     |
+| Product analytics | Workers Logs (`analytics_event` lines); Analytics Engine used if an `ANALYTICS` binding exists | Implemented                                     |
+| Logs              | Workers Logs (`[observability] enabled`, 100% head sampling)                                   | Implemented                                     |
+| CI                | GitHub Actions `ci.yml` (checks only); deploys are done by Cloudflare Workers Builds           | Implemented                                     |
 
 ## Data ownership and layout
 
-All business data is owned by Chat360 and stored in its tenant:
+All business data is owned by Chat360 and stored in its own D1 database, one JSON document per row, keyed by path:
 
 ```
-<ONEDRIVE_ROOT_PATH>/
-  _system/
-    directory.json            employees (by Entra oid), roles, status, onboarding, identity history
-    config.json               timezone, working days, holidays, delay reasons, escalation levels/SLAs,
-                              destinations, support contact, disabledJobs
-    projects-index.json       one summary per project (for lists, access checks, portfolio views)
-    support.json              support requests
-    account-requests.json     deactivation requests
-    audit/YYYY-MM.json        organisation audit log
-  <destination path, e.g. Projects>/
-    <PRJ-ID> <Client> - <Project>/
-      project.json            system of record for the project
-      <Client> - <Project> - Tracker.xlsx   official Excel tracker (kept in sync)
-      (SOW, BRD, bot flows… managed by people; linked from the app)
+_system/directory.json          employees (random UUIDs), roles, status, onboarding, identity history
+_system/credentials.json        password hashes (PBKDF2) and pending set-password links (hashed)
+_system/config.json             timezone, working days, holidays, delay reasons, escalation levels/SLAs,
+                                project groups ("destinations"), support contact, disabledJobs
+_system/projects-index.json     one summary per project (lists, access checks, portfolio views)
+_system/support.json            support requests
+_system/account-requests.json   deactivation requests
+_system/audit/YYYY-MM.json      organisation audit log
+Projects/<PRJ-ID> <Client> - <Project>/project.json   system of record for one project
 ```
 
-`project.json` holds team and team history, finance figures, tasks (with revisions, confirmations, comments, history), API dependencies, escalations (with level history and notification records), transfers (with snapshot, execution steps and history), document links, communication references, workbook sync state, project audit and idempotency keys.
+`project.json` holds team and team history, finance figures, tasks (with revisions, confirmations, comments, history), API dependencies, escalations (with level history and notification records), transfers (with snapshot, execution steps and history), document links, project audit and idempotency keys.
 
-The Coordinator holds **no business records** (ADR-003). Losing it signs everyone out and resets counters.
+The Excel tracker is not stored: `GET /api/projects/:id/tracker.xlsx` builds it from `project.json` on demand.
+
+The Coordinator holds **no business records**. Losing it signs everyone out and resets counters.
 
 ## Consistency model
 
-- Each document write is a compare-and-swap on the OneDrive eTag (ADR-004). Multi-document operations (project + index, transfers) are ordered, recorded and idempotent; the daily `reconcile` job rebuilds index entries from project documents and recovers projects missing from the index.
-- Excel is a projection of `project.json`, synchronised one-way with conflict detection (ADR-006). `workbook.syncedRevision` vs. `revision` tells whether Excel is behind.
+- Each document write is a compare-and-swap on the row's eTag (ADR-004, ADR-021): a single conditional SQL statement; a lost race changes no row and the pure mutation is re-run on fresh data. Multi-document operations (project + index, transfers) are ordered, recorded and idempotent; the daily `reconcile` job rebuilds index entries from project documents and recovers projects missing from the index.
 - Read-mostly system documents (directory, config, index) are cached per Worker isolate for 30 s.
 
 ## Scheduled processing
 
-| Cron (UTC)    | Default local time (IST) | Jobs                                                                                                                   |
-| ------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `30 3 * * *`  | 09:00                    | `morning_reminders` (digest per owner, once per day), weekly sheet roll-over sync for all active projects, `reconcile` |
-| `30 13 * * *` | 19:00                    | `daily_confirmation` (no-response marks, escalations, notifications, sync) — working days only                         |
-| `15 * * * *`  | hourly                   | `maintenance` (SLA escalation ladder, notification retries, workbook sync retries, due transfers, Coordinator purge)   |
+| Cron (UTC)    | Default local time (IST) | Jobs                                                                                     |
+| ------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
+| `30 3 * * *`  | 09:00                    | `morning_reminders` (digest per owner, once per day; needs a mail provider), `reconcile` |
+| `30 13 * * *` | 19:00                    | `daily_confirmation` (no-response marks, escalations, notifications) — working days only |
+| `15 * * * *`  | hourly                   | `maintenance` (SLA escalation ladder, notification retries, due transfers, purge)        |
 
-Jobs run under a 15-minute lease, record a run in the job ledger (Admin → Scheduled jobs) and can be disabled via `disabledJobs` without a deploy. If Chat360 changes the org timezone, update the cron times in `apps/api/wrangler.toml`.
+Jobs run under a 15-minute lease, record a run in the job ledger (Admin → Scheduled jobs) and can be disabled via `disabledJobs` without a deploy. If Chat360 changes the org timezone, update the cron times in `wrangler.toml`.
 
-## Capacity and limits
+## Capacity and limits (Workers free plan)
 
-- Graph: each document read is 2 requests; a full sync ~5 requests (session, read batch, write batch(es), close) plus the document writes. Graph throttles bursts; the client honours `Retry-After` and jobs process 4 projects concurrently.
-- Workers: the free plan's 50 subrequests per invocation is too low for scheduled jobs over many projects; use **Workers Paid** (higher subrequest and CPU limits). Analytics reads at most 300 project documents per request.
-- Durable Object: one instance comfortably serves an internal employee population; shard by user if this ever changes.
+- 100,000 requests per day; D1 free quotas for storage, rows read and rows written. An internal team stays far below them.
+- **10 ms CPU per request.** Time waiting on D1 or the Durable Object does not count. Password hashing (PBKDF2, 100,000 rounds) and generating a large tracker are the heaviest steps; if logs show CPU-limit errors, Workers Paid raises the limit.
+- **50 subrequests per invocation.** If D1 and Durable Object calls count toward it, a scheduled job over more than roughly ten active projects could stop part-way; projects not reached are processed by the next hourly run, and Workers Paid removes the concern. Not yet measured on a real deployment.
+- A project is one D1 row (2 MB maximum), enough for thousands of tasks.
+- Analytics reads at most 300 project documents per request.
 
 ## Secrets and configuration
 
-See `docs/deployment.md` for every variable. Secrets: `ENTRA_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY`, `COOKIE_SECRET` (Worker secrets). Non-secret vars in `wrangler.toml` per environment.
+See `docs/deployment.md`. The only secret is `SETUP_CODE`; `APP_ORIGIN` is a plain variable. Fail-closed constants and bindings are in `wrangler.toml`.
 
 ## Monitoring and recovery
 
-- Logs: JSON lines with `requestId`, `errorId`, `job`, `projectId`; redacted (see `docs/security.md`). Useful queries: `msg = "request_error"`, `msg = "job_finished" AND level = "error"`, `msg = "workbook_sync_failed"`, `msg = "graph_retry"` (throttling), `msg = "notification_failures"`, `msg = "client_error"`, `msg = "configuration_error"`.
-- **Pending:** Cloudflare notifications/alerts on Worker error rate and on these log patterns, and an uptime check on `/api/health`.
-- Recovery playbooks: `docs/security.md` §Incident response and `docs/deployment.md` §Rollback and troubleshooting.
+- Logs: JSON lines with `requestId`, `errorId`, `job`, `projectId`; redacted (see `docs/security.md`). Useful queries: `msg = "request_error"`, `msg = "job_finished" AND level = "error"`, `msg = "notification_failures"`, `msg = "client_error"`, `msg = "configuration_error"`.
+- **Pending:** Cloudflare notifications on Worker error rate and an uptime check on `/api/health`.
+- Recovery: D1 Time Travel (point-in-time restore); see `docs/deployment.md` §Rollback and recovery and `docs/security.md` §Incident response.
 
 ## External dependencies
 
-Microsoft Entra ID and Graph (identity, storage, mail, calendar); Cloudflare Pages, Workers, Durable Objects, Cron Triggers, Analytics Engine; GitHub (source, Actions). npm runtime dependencies: `hono`, `jose`, `zod`, `fflate`, `react`, `react-dom`, `react-router`.
+Cloudflare Workers, D1, Durable Objects, Cron Triggers, Workers Builds; GitHub (source, Actions). npm runtime dependencies: `hono`, `zod`, `fflate`, `react`, `react-dom`, `react-router`.
 
 ## Known limitations
 
-1. Excel edits are not imported back into the app (conflicts are surfaced instead).
-2. Folder sharing/permissions are not managed by the app; the library's permissions apply.
-3. Email attachments are not supported (a tracker link can be included).
-4. No live verification against Microsoft Graph or Cloudflare has been performed yet.
+1. No email is sent: notifications are recorded as "not configured" and shown in the app; email drafts open in the user's own mail app.
+2. The Excel tracker is a download, not a shared live file; edits made in a downloaded copy are not imported.
+3. No live verification on a deployed Cloudflare account has been performed yet.

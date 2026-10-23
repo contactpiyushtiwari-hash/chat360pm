@@ -1314,8 +1314,6 @@ progress {
 }
 .login-card {
   width: min(480px, 100%);
-}
-.login-card .card-body {
   padding: var(--sp-5);
 }
 .login-brand {

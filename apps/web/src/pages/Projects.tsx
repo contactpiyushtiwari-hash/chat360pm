@@ -98,7 +98,6 @@ export function ProjectsPage() {
                   <th scope="col">Go-live</th>
                   <th scope="col">Health</th>
                   <th scope="col">Open / overdue</th>
-                  <th scope="col">Excel</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,9 +119,6 @@ export function ProjectsPage() {
                       <span className={p.summary.overdueTasks ? 'text-danger' : ''}>
                         {p.summary.overdueTasks}
                       </span>
-                    </td>
-                    <td data-label="Excel">
-                      <Badge value={p.workbookState} />
                     </td>
                   </tr>
                 ))}

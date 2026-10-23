@@ -7,7 +7,6 @@ import {
   onboardingUpdateSchema,
 } from '@chat360/core';
 import { Hono } from 'hono';
-import { hasOutlookConsent } from '../auth/delegated';
 import { domainContext } from '../deps';
 import { body, requireUser, type AppEnv } from '../http/context';
 
@@ -17,7 +16,6 @@ meRoutes.get('/me', async (c) => {
   const user = requireUser(c);
   const deps = c.get('deps');
   const ctx = await domainContext(deps, user);
-  const outlookConsent = hasOutlookConsent(c.get('session')?.scopes ?? '');
   return c.json({
     user: {
       id: user.id,
@@ -31,8 +29,7 @@ meRoutes.get('/me', async (c) => {
       portfolio: canViewPortfolio(user),
       admin: canAdminister(user),
     },
-    onboarding: onboardingStatus(user, { outlookConsent }),
-    outlookConsent,
+    onboarding: onboardingStatus(user),
     environment: deps.config.environment,
     devAuth: deps.config.devAuth,
     notificationsConfigured: deps.mailer.configured,
@@ -48,11 +45,10 @@ meRoutes.patch('/me/onboarding', async (c) => {
   const input = await body(c, onboardingUpdateSchema);
   const deps = c.get('deps');
   const now = deps.clock().toISOString();
-  const outlookConsent = hasOutlookConsent(c.get('session')?.scopes ?? '');
   const wasComplete = !!user.onboarding.completedAt;
   const { result } = await deps.repos.updateDirectory((d) => {
     const u = d.users.find((x) => x.id === user.id)!;
-    return applyOnboardingUpdate(u, input.completeSteps, input.skipSteps, now, { outlookConsent });
+    return applyOnboardingUpdate(u, input.completeSteps, input.skipSteps, now);
   });
   if (result.complete && !wasComplete)
     deps.analytics.track('onboarding_completed', { role: user.roles[0] ?? 'none' });

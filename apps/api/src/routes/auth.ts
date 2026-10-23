@@ -1,137 +1,44 @@
-import { canAdminister, type DirectoryUser } from '@chat360/core';
+import {
+  canAdminister,
+  firstAdminSchema,
+  loginSchema,
+  setPasswordSchema,
+  type DirectoryUser,
+} from '@chat360/core';
 import { Hono } from 'hono';
-import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
+import { deleteCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
-import { decryptJson, encryptJson, randomToken, sha256Hex } from '../auth/crypto';
-import { TOKEN_PURPOSE } from '../auth/delegated';
-import { BASE_SCOPES, OUTLOOK_SCOPES, pkcePair, type TokenSet } from '../auth/oidc';
+import {
+  hashPassword,
+  randomToken,
+  safeEqual,
+  sha256Hex,
+  verifyPassword,
+  type PasswordHash,
+} from '../auth/crypto';
 import type { Deps } from '../deps';
-import { body, clientIp, limit, requireUser, type AppContext, type AppEnv } from '../http/context';
+import { body, clientIp, limit, type AppContext, type AppEnv } from '../http/context';
 import { AuthError } from '../http/errors';
-import type { GraphProfile } from '../ports';
 
-const TX_COOKIE = 'c360_oidc';
-const TX_PURPOSE = 'oidc-tx-v1';
 const SESSION_TTL_MS = 12 * 3600_000;
 const REAUTH_WINDOW_MS = 15 * 60_000;
+export const SETUP_LINK_TTL_MS = 7 * 24 * 3600_000;
 
-interface OidcTx {
-  state: string;
-  nonce: string;
-  verifier: string;
-  returnTo: string;
-  mode: 'login' | 'consent';
-  /** Consent mode: the session to upgrade. The Strict session cookie is not sent on the
-   * cross-site callback navigation, so the id travels in this encrypted, Lax cookie instead. */
-  sessionId?: string;
-  exp: number;
-}
+const INVALID_LOGIN = 'Email or password is incorrect.';
+// Verified when the email is unknown so a miss costs the same time as a wrong password.
+let dummyHash: Promise<PasswordHash> | null = null;
 
-/** Only same-origin relative paths; blocks open redirects like `//evil.com` or `/\evil.com`. */
-export function safeReturnTo(v: string | undefined): string {
-  if (!v || !v.startsWith('/') || v.startsWith('//') || v.startsWith('/\\') || v.includes('\n'))
-    return '/';
-  return v.slice(0, 500);
-}
-
-/**
- * Employee access policy (PRD-AUTH-003). The email domain is a consistency check only; it never
- * grants access or privileges by itself. Guests and disabled accounts are refused.
- */
-export function checkEmployeePolicy(profile: GraphProfile, allowedDomains: string[]): string {
-  if (profile.userType && profile.userType !== 'Member')
-    throw new AuthError(
-      'not_authorized',
-      'Guest and external accounts cannot use this application.',
-    );
-  if (profile.userPrincipalName.includes('#EXT#'))
-    throw new AuthError(
-      'not_authorized',
-      'Guest and external accounts cannot use this application.',
-    );
-  if (profile.accountEnabled === false)
-    throw new AuthError('account_inactive', 'This account is disabled.');
-  const email = (profile.mail ?? profile.userPrincipalName).toLowerCase();
-  const domain = email.split('@')[1] ?? '';
-  if (allowedDomains.length && !allowedDomains.includes(domain)) {
-    throw new AuthError('not_authorized', 'This account is not a Chat360 employee account.');
-  }
-  return email;
-}
-
-/** Creates or refreshes the directory record keyed by the stable Entra object id. */
-export async function upsertDirectoryUser(
-  deps: Deps,
-  identity: { id: string; tenantId: string; email: string; displayName: string },
-): Promise<{ user: DirectoryUser; created: boolean; bootstrapped: boolean }> {
-  const now = deps.clock().toISOString();
-  const { result } = await deps.repos.updateDirectory((d) => {
-    let user = d.users.find((u) => u.id === identity.id);
-    let created = false;
-    let bootstrapped = false;
-    const noActiveAdmin = !d.users.some((u) => u.status === 'active' && u.roles.includes('admin'));
-    if (!user) {
-      created = true;
-      user = {
-        ...identity,
-        roles: [],
-        status: 'active',
-        onboarding: { completedSteps: [], skippedSteps: [] },
-        identityHistory: [],
-        createdAt: now,
-        updatedAt: now,
-      };
-      d.users.push(user);
-    } else if (user.email !== identity.email || user.displayName !== identity.displayName) {
-      user.identityHistory.push({ at: now, email: user.email, displayName: user.displayName });
-      user.email = identity.email;
-      user.displayName = identity.displayName;
-      user.updatedAt = now;
-    }
-    // Bootstrap administrators are named by object id in configuration, never by email. They are
-    // granted admin on first sign-in, or when no active admin exists (lock-out recovery).
-    if (
-      deps.config.bootstrapAdminIds.includes(identity.id) &&
-      !user.roles.includes('admin') &&
-      (created || noActiveAdmin)
-    ) {
-      user.roles.push('admin');
-      bootstrapped = true;
-    }
-    return { user: structuredClone(user), created, bootstrapped };
-  });
-  if (result.created || result.bootstrapped) {
-    await deps.repos.appendAudit({
-      at: now,
-      actor: identity.id,
-      action: result.bootstrapped ? 'user.bootstrap_admin' : 'user.first_sign_in',
-      target: identity.id,
-    });
-  }
-  return result;
-}
-
-async function startSession(
-  c: AppContext,
-  user: DirectoryUser,
-  tokens: TokenSet | null,
-  authTime: number,
-) {
+export async function startSession(c: AppContext, user: DirectoryUser) {
   const deps = c.get('deps');
   const raw = randomToken(32);
   const now = deps.clock().getTime();
-  const stored = tokens ? { ...tokens } : null;
-  if (stored) delete stored.idToken;
   await deps.sessions.create({
     id: await sha256Hex(raw),
     userId: user.id,
-    tenantId: user.tenantId,
     createdAt: now,
     expiresAt: now + SESSION_TTL_MS,
     lastSeenAt: now,
-    authTime,
-    tokens: stored ? await encryptJson(deps.config.tokenKey, TOKEN_PURPOSE, stored) : null,
-    scopes: tokens?.scope ?? '',
+    authTime: now,
   });
   setCookie(c, deps.config.sessionCookieName, raw, {
     httpOnly: true,
@@ -150,122 +57,141 @@ export function requireRecentAuth(c: AppContext) {
   }
 }
 
+/** Issues a one-time set-password link. The token travels in the URL fragment, not to the server log. */
+export async function issueSetupLink(deps: Deps, userId: string) {
+  const token = randomToken(32);
+  const key = await sha256Hex(token);
+  const now = deps.clock().getTime();
+  await deps.repos.updateCredentials((cr) => {
+    for (const [k, v] of Object.entries(cr.setupLinks)) {
+      if (v.userId === userId || v.expiresAt < now) delete cr.setupLinks[k];
+    }
+    cr.setupLinks[key] = { userId, expiresAt: now + SETUP_LINK_TTL_MS };
+  });
+  return {
+    url: `${deps.config.appOrigin}/set-password#token=${token}`,
+    expiresAt: new Date(now + SETUP_LINK_TTL_MS).toISOString(),
+  };
+}
+
+async function setupRequired(deps: Deps) {
+  const [d, cr] = await Promise.all([deps.repos.directory(), deps.repos.credentials()]);
+  return !d.users.some((u) => canAdminister(u) && u.status === 'active' && cr.passwords[u.id]);
+}
+
 export const authRoutes = new Hono<AppEnv>();
 
-authRoutes.get('/config', (c) => {
+authRoutes.get('/config', async (c) => {
   const deps = c.get('deps');
   return c.json({
     devAuth: deps.config.devAuth,
-    entraConfigured: !!deps.oidc,
+    setupAvailable: !!deps.config.setupCode && (await setupRequired(deps)),
     environment: deps.config.environment,
   });
 });
 
-async function beginAuthorize(c: AppContext, mode: OidcTx['mode']) {
+authRoutes.post('/login', async (c) => {
   const deps = c.get('deps');
-  await limit(c, `auth:${clientIp(c)}`, 30, 60);
-  if (!deps.oidc)
+  await limit(c, `login-ip:${clientIp(c)}`, 30, 600);
+  const input = await body(c, loginSchema);
+  await limit(c, `login-email:${input.email}`, 10, 900);
+  const [d, cr] = await Promise.all([deps.repos.directory(), deps.repos.credentials()]);
+  const user = d.users.find((u) => u.email.toLowerCase() === input.email);
+  const stored = user ? cr.passwords[user.id] : undefined;
+  dummyHash ??= hashPassword(randomToken(16));
+  const ok = await verifyPassword(input.password, stored ?? (await dummyHash));
+  if (!user || !stored || !ok) throw new AuthError('invalid_credentials', INVALID_LOGIN);
+  if (user.status === 'deactivated')
     throw new AuthError(
-      'unauthenticated',
-      'Microsoft sign-in is not configured for this environment.',
+      'account_inactive',
+      'Your access to this application has been deactivated.',
     );
-  const { verifier, challenge } = await pkcePair();
-  const tx: OidcTx = {
-    state: randomToken(24),
-    nonce: randomToken(24),
-    verifier,
-    returnTo: safeReturnTo(c.req.query('returnTo')),
-    mode,
-    ...(mode === 'consent' ? { sessionId: c.get('session')!.id } : {}),
-    exp: deps.clock().getTime() + 10 * 60_000,
-  };
-  setCookie(c, TX_COOKIE, await encryptJson(deps.config.cookieSecret, TX_PURPOSE, tx), {
-    httpOnly: true,
-    secure: deps.config.secureCookies,
-    // Lax: the callback is a top-level navigation from login.microsoftonline.com.
-    sameSite: 'Lax',
-    path: '/api/auth',
-    maxAge: 600,
-  });
-  const user = c.get('user');
-  const url = deps.oidc.authorizeUrl({
-    state: tx.state,
-    nonce: tx.nonce,
-    codeChallenge: challenge,
-    scopes: mode === 'consent' ? [...BASE_SCOPES, ...OUTLOOK_SCOPES] : BASE_SCOPES,
-    ...(c.req.query('prompt') === 'login' ? { prompt: 'login' } : {}),
-    ...(user ? { loginHint: user.email } : {}),
-  });
-  return c.redirect(url, 302);
-}
-
-authRoutes.get('/login', (c) => beginAuthorize(c, 'login'));
-
-authRoutes.get('/consent', (c) => {
-  requireUser(c);
-  return beginAuthorize(c, 'consent');
+  await startSession(c, user);
+  deps.analytics.track('login', { role: user.roles[0] ?? 'none' });
+  return c.json({ ok: true, onboarded: !!user.onboarding.completedAt });
 });
 
-authRoutes.get('/callback', async (c) => {
+/** First administrator. Needs the SETUP_CODE secret and works only while no admin can sign in. */
+authRoutes.post('/setup', async (c) => {
   const deps = c.get('deps');
-  const fail = (code: string) => c.redirect(`/login?error=${encodeURIComponent(code)}`, 302);
-  const txRaw = getCookie(c, TX_COOKIE);
-  deleteCookie(c, TX_COOKIE, { path: '/api/auth' });
-  const tx = txRaw ? await decryptJson<OidcTx>(deps.config.cookieSecret, TX_PURPOSE, txRaw) : null;
-  if (c.req.query('error')) {
-    c.get('log').warn('oidc_error_response', { error: c.req.query('error') });
-    return fail(c.req.query('error') === 'access_denied' ? 'consent_declined' : 'signin_failed');
-  }
-  if (!tx || tx.exp < deps.clock().getTime() || tx.state !== c.req.query('state'))
-    return fail('signin_expired');
-  if (!deps.oidc) return fail('signin_unavailable');
-  try {
-    const tokens = await deps.oidc.exchangeCode(c.req.query('code') ?? '', tx.verifier);
-    const claims = await deps.oidc.verifyIdToken(tokens.idToken ?? '', tx.nonce);
-    const profile = await deps.userGraphFor(tokens.accessToken).getProfile();
-    if (profile.id !== claims.oid) throw new AuthError('not_authorized', 'Identity mismatch.');
-    const email = checkEmployeePolicy(profile, deps.config.allowedEmailDomains);
-
-    if (tx.mode === 'consent') {
-      const session = tx.sessionId ? await deps.sessions.get(tx.sessionId) : null;
-      if (!session || session.userId !== claims.oid) return fail('signin_mismatch');
-      const stored = { ...tokens };
-      delete stored.idToken;
-      await deps.sessions.setTokens(
-        session.id,
-        await encryptJson(deps.config.tokenKey, TOKEN_PURPOSE, stored),
-        tokens.scope,
-      );
-      deps.analytics.track('outlook_consent_granted', {});
-      return c.redirect(tx.returnTo, 302);
+  await limit(c, `setup:${clientIp(c)}`, 5, 3600);
+  const input = await body(c, firstAdminSchema);
+  const code = deps.config.setupCode;
+  if (!code || !safeEqual(await sha256Hex(input.setupCode), await sha256Hex(code)))
+    throw new AuthError('not_authorized', 'The setup code is incorrect.');
+  if (!(await setupRequired(deps)))
+    throw new AuthError('not_authorized', 'Setup is already complete. Please sign in.');
+  const now = deps.clock().toISOString();
+  const { result: user } = await deps.repos.updateDirectory((d) => {
+    let u = d.users.find((x) => x.email.toLowerCase() === input.email);
+    if (!u) {
+      u = {
+        id: crypto.randomUUID(),
+        tenantId: '',
+        email: input.email,
+        displayName: input.displayName,
+        roles: [],
+        status: 'active',
+        onboarding: { completedSteps: [], skippedSteps: [] },
+        identityHistory: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      d.users.push(u);
     }
+    if (!u.roles.includes('admin')) u.roles.push('admin');
+    u.status = 'active';
+    u.updatedAt = now;
+    return structuredClone(u);
+  });
+  const hash = await hashPassword(input.password);
+  await deps.repos.updateCredentials((cr) => {
+    cr.passwords[user.id] = { ...hash, updatedAt: now };
+  });
+  await deps.repos.appendAudit({
+    at: now,
+    actor: user.id,
+    action: 'user.bootstrap_admin',
+    target: user.id,
+  });
+  await startSession(c, user);
+  return c.json({ ok: true }, 201);
+});
 
-    const { user } = await upsertDirectoryUser(deps, {
-      id: claims.oid,
-      tenantId: claims.tid,
-      email,
-      displayName: profile.displayName || claims.name || email,
-    });
-    if (user.status === 'deactivated')
-      throw new AuthError(
-        'account_inactive',
-        'Your access to this application has been deactivated.',
-      );
-    await startSession(
-      c,
-      user,
-      tokens,
-      (claims.auth_time ?? Math.floor(deps.clock().getTime() / 1000)) * 1000,
+/** Completes a set-password link (new account or admin-issued reset). Signs out other sessions. */
+authRoutes.post('/set-password', async (c) => {
+  const deps = c.get('deps');
+  await limit(c, `set-password:${clientIp(c)}`, 20, 3600);
+  const input = await body(c, setPasswordSchema);
+  const key = await sha256Hex(input.token);
+  const nowMs = deps.clock().getTime();
+  const hash = await hashPassword(input.password);
+  const { result: userId } = await deps.repos.updateCredentials((cr) => {
+    const link = cr.setupLinks[key];
+    if (!link || link.expiresAt < nowMs) return null;
+    delete cr.setupLinks[key];
+    cr.passwords[link.userId] = { ...hash, updatedAt: new Date(nowMs).toISOString() };
+    return link.userId;
+  });
+  const user = userId
+    ? (await deps.repos.directory()).users.find(
+        (u) => u.id === userId && u.status !== 'deactivated',
+      )
+    : undefined;
+  if (!user)
+    throw new AuthError(
+      'link_invalid',
+      'This link has expired or was already used. Ask an administrator for a new one.',
     );
-    deps.analytics.track('login', { role: user.roles[0] ?? 'none' });
-    return c.redirect(user.onboarding.completedAt ? tx.returnTo : '/welcome', 302);
-  } catch (err) {
-    c.get('log').warn('signin_rejected', {
-      error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
-    });
-    if (err instanceof AuthError) return fail(err.code);
-    return fail('signin_failed');
-  }
+  await deps.sessions.deleteForUser(user.id);
+  await deps.repos.appendAudit({
+    at: new Date(nowMs).toISOString(),
+    actor: user.id,
+    action: 'user.password_set',
+    target: user.id,
+  });
+  await startSession(c, user);
+  return c.json({ ok: true, onboarded: !!user.onboarding.completedAt });
 });
 
 authRoutes.post('/logout', async (c) => {
@@ -273,10 +199,7 @@ authRoutes.post('/logout', async (c) => {
   const s = c.get('session');
   if (s) await deps.sessions.delete(s.id);
   deleteCookie(c, deps.config.sessionCookieName, { path: '/' });
-  const logoutUrl = deps.config.entra
-    ? `https://login.microsoftonline.com/${deps.config.entra.tenantId}/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent(`${deps.config.appOrigin}/login?signedOut=1`)}`
-    : null;
-  return c.json({ ok: true, logoutUrl });
+  return c.json({ ok: true });
 });
 
 /** Development-only sign-in. Not registered at all unless DEV_AUTH=enabled in development. */
@@ -296,19 +219,7 @@ export function registerDevAuth(app: Hono<AppEnv>, deps: Deps) {
       (u) => u.id === userId && u.status !== 'deactivated',
     );
     if (!user) throw new AuthError('unauthenticated', 'Unknown development user.');
-    const now = deps.clock().getTime();
-    // Fake delegated tokens: dev adapters record email/calendar actions instead of calling Graph.
-    await startSession(
-      c,
-      user,
-      {
-        accessToken: 'dev',
-        refreshToken: null,
-        expiresAt: now + SESSION_TTL_MS,
-        scope: [...BASE_SCOPES, ...OUTLOOK_SCOPES].join(' '),
-      },
-      now,
-    );
+    await startSession(c, user);
     return c.json({ ok: true, isAdmin: canAdminister(user) });
   });
 }

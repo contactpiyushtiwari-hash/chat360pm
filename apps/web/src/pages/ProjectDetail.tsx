@@ -31,9 +31,7 @@ import {
   Skeleton,
   Tabs,
   TextArea,
-  useToast,
 } from '../components/ui';
-import { SyncStatus } from '../components/SyncStatus';
 import { TaskDialog } from '../components/TaskDialog';
 import { TaskGantt, TaskKanban, TaskList } from '../components/TaskViews';
 import { ReassignPmDialog, RequestTransferDialog } from '../components/Handover';
@@ -41,15 +39,7 @@ import { UserMultiSelect, UserSelect } from '../components/UserPicker';
 import { FinanceTab } from '../components/FinanceTab';
 import { NotFoundPage } from './NotFound';
 
-type TabId =
-  | 'overview'
-  | 'tasks'
-  | 'apis'
-  | 'escalations'
-  | 'transfers'
-  | 'history'
-  | 'communications'
-  | 'finance';
+type TabId = 'overview' | 'tasks' | 'apis' | 'escalations' | 'transfers' | 'history' | 'finance';
 
 export function ProjectDetailPage() {
   const { id = '' } = useParams();
@@ -86,31 +76,23 @@ export function ProjectDetailPage() {
         }
         actions={
           <>
-            {p.workbook.webUrl && (
+            {p.permissions.downloadTracker && (
               <a
                 className="btn btn-secondary"
-                href={p.workbook.webUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => track('workbook_opened')}
+                href={`/api/projects/${p.id}/tracker.xlsx`}
+                download
+                onClick={() => track('tracker_downloaded')}
               >
-                Open Excel tracker
+                <span>Download Excel tracker</span>
               </a>
             )}
-            {p.permissions.logCommunication && (
-              <ButtonLink to={`/email?projectId=${p.id}`}>Compose email</ButtonLink>
-            )}
+            <ButtonLink to={`/email?projectId=${p.id}`}>Draft email</ButtonLink>
           </>
         }
       />
       {params.get('created') && (
-        <div
-          className={params.get('workbook') === 'failed' ? 'inline-error' : 'notice'}
-          role="status"
-        >
-          {params.get('workbook') === 'failed'
-            ? 'Project created, but the Excel workbook could not be generated. See the Excel tracker card below to retry.'
-            : 'Project created and Excel tracker generated in OneDrive.'}
+        <div className="notice" role="status">
+          Project created. Download its Excel tracker any time from the button above.
         </div>
       )}
       <Tabs<TabId>
@@ -128,7 +110,6 @@ export function ProjectDetailPage() {
           { id: 'escalations', label: 'Escalations', count: openEsc },
           { id: 'transfers', label: 'Transfers' },
           { id: 'history', label: 'History' },
-          { id: 'communications', label: 'Communications' },
           ...(p.permissions.viewFinance ? [{ id: 'finance' as const, label: 'Finance' }] : []),
         ]}
       />
@@ -139,7 +120,6 @@ export function ProjectDetailPage() {
         {tab === 'escalations' && <EscalationsTab p={p} reload={r.reload} />}
         {tab === 'transfers' && <TransfersTab p={p} reload={r.reload} today={me.today} />}
         {tab === 'history' && <HistoryTab p={p} />}
-        {tab === 'communications' && <CommsTab p={p} />}
         {tab === 'finance' && <FinanceTab p={p} reload={r.reload} />}
       </div>
     </>
@@ -148,45 +128,7 @@ export function ProjectDetailPage() {
 
 function Overview({ p, reload }: { p: ProjectView; reload: () => Promise<void> }) {
   const { nameOf } = useSession();
-  const toast = useToast();
   const [editTeam, setEditTeam] = useState(false);
-  const gen = useAction(async () => {
-    const r = await post<{ workbook: { status: string; error?: string } }>(
-      `/api/projects/${p.id}/workbook`,
-    );
-    toast(
-      r.workbook.status === 'failed' ? 'error' : 'success',
-      r.workbook.status === 'failed'
-        ? `Workbook generation failed: ${r.workbook.error}`
-        : 'Workbook generated.',
-    );
-    await reload();
-  });
-  const sync = useAction(async () => {
-    const r = await post<{ workbook: { status: string; error?: string; conflicts?: number } }>(
-      `/api/projects/${p.id}/workbook/sync`,
-    );
-    toast(
-      r.workbook.status === 'failed'
-        ? 'error'
-        : r.workbook.status === 'conflict'
-          ? 'info'
-          : 'success',
-      r.workbook.status === 'synced' || r.workbook.status === 'up_to_date'
-        ? 'Excel is up to date.'
-        : r.workbook.status === 'conflict'
-          ? `${r.workbook.conflicts} row(s) were edited in Excel and need review.`
-          : r.workbook.status === 'busy'
-            ? 'A sync is already running; check again shortly.'
-            : `Sync failed: ${r.workbook.error ?? r.workbook.status}`,
-    );
-    await reload();
-  });
-  const resolve = useAction(async (keys: string[]) => {
-    await post(`/api/projects/${p.id}/workbook/conflicts/resolve`, { keys, resolution: 'use_app' });
-    toast('success', 'Excel rows overwritten with the values from the app.');
-    await reload();
-  });
   const team = p.team;
   const roleRows: [string, string][] = [
     [PROJECT_ROLE_LABELS.pm, nameOf(team.pm)],
@@ -240,78 +182,10 @@ function Overview({ p, reload }: { p: ProjectView; reload: () => Promise<void> }
           </p>
         )}
       </Card>
-      <Card title="Excel tracker (OneDrive)">
-        <p>
-          <SyncStatus projectId={p.id} initial={p.workbook} />
-        </p>
-        <KeyValue
-          items={[
-            [
-              'File',
-              p.workbook.webUrl ? (
-                <a href={p.workbook.webUrl} target="_blank" rel="noopener noreferrer">
-                  {p.workbook.fileName}
-                </a>
-              ) : (
-                p.workbook.fileName
-              ),
-            ],
-            ['Folder', p.folderPath],
-            ['Last synced', fmtInstant(p.workbook.lastSyncedAt)],
-          ]}
-        />
-        <div className="row">
-          {!p.workbook.driveItemId && p.permissions.syncWorkbook && (
-            <Button variant="primary" loading={gen.pending} onClick={() => void gen.run()}>
-              Generate workbook
-            </Button>
-          )}
-          {p.workbook.driveItemId && p.permissions.syncWorkbook && (
-            <Button loading={sync.pending} onClick={() => void sync.run()}>
-              Sync now
-            </Button>
-          )}
-        </div>
-        <InlineError error={gen.error ?? sync.error ?? resolve.error} />
-        {p.workbook.conflicts.length > 0 && (
-          <div className="conflicts">
-            <h3>Rows edited directly in Excel ({p.workbook.conflicts.length})</h3>
-            <p className="hint">
-              These rows were not overwritten. To keep the Excel value, update the task in the app
-              to match. To discard the Excel edit, overwrite it.
-            </p>
-            <ul className="compact">
-              {p.workbook.conflicts.map((c) => (
-                <li key={c.key}>
-                  <span className="mono">
-                    {c.table} / {c.rowKey}
-                  </span>
-                  :{' '}
-                  {Object.keys(c.excelValues).map((k) => (
-                    <span key={k}>
-                      {k}: Excel “{String(c.excelValues[k])}” vs app “{String(c.appValues[k])}
-                      ”.{' '}
-                    </span>
-                  ))}
-                </li>
-              ))}
-            </ul>
-            {p.permissions.resolveConflicts && (
-              <Button
-                variant="danger"
-                loading={resolve.pending}
-                onClick={() => void resolve.run(p.workbook.conflicts.map((c) => c.key))}
-              >
-                Overwrite Excel with app values
-              </Button>
-            )}
-          </div>
-        )}
-      </Card>
       <Card title="Documents">
         {p.documents.length === 0 ? (
           <EmptyState title="No documents linked">
-            Link the SOW, BRD and bot flows stored in OneDrive.
+            Link the SOW, BRD and bot flows (any shared link).
           </EmptyState>
         ) : (
           <ul className="list">
@@ -369,10 +243,7 @@ function DocumentAdder({ p, reload }: { p: ProjectView; reload: () => Promise<vo
           )}
         </Field>
       </div>
-      <Field
-        label="OneDrive link"
-        error={add.error?.fields['documents.' + p.documents.length + '.url']}
-      >
+      <Field label="Link" error={add.error?.fields['documents.' + p.documents.length + '.url']}>
         {(a) => (
           <Input
             {...a}
@@ -1042,47 +913,5 @@ function HistoryTab({ p }: { p: ProjectView }) {
         </ol>
       </Card>
     </div>
-  );
-}
-
-function CommsTab({ p }: { p: ProjectView }) {
-  const { nameOf } = useSession();
-  return (
-    <Card
-      title="Emails and meetings"
-      actions={
-        p.permissions.logCommunication && (
-          <>
-            <ButtonLink to={`/email?projectId=${p.id}`}>Compose email</ButtonLink>
-            <ButtonLink to={`/calendar?projectId=${p.id}`}>Schedule meeting</ButtonLink>
-          </>
-        )
-      }
-    >
-      {p.communications.length === 0 ? (
-        <EmptyState title="No project communications yet">
-          Emails and meetings sent from this platform are referenced here (subjects and recipients
-          only).
-        </EmptyState>
-      ) : (
-        <ul className="list">
-          {[...p.communications].reverse().map((c) => (
-            <li key={c.id} className="list-row">
-              <div>
-                <strong>{c.subject}</strong> <span className="hint">({c.kind})</span>
-                <div className="hint">
-                  {fmtInstant(c.at)} · {nameOf(c.by)} · {c.recipients.length} recipient(s)
-                  {c.error && ` · ${c.error}`}
-                </div>
-              </div>
-              <Badge
-                value={c.status === 'sent' || c.status === 'created' ? 'done' : c.status}
-                label={c.status}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { GLOBAL_ROLE_LABELS, type AccountRequest } from '@chat360/core';
-import { ApiError, loginUrl, post } from '../lib/api';
+import { ApiError, post, signInAgain } from '../lib/api';
 import { fmtInstant, titleCase } from '../lib/format';
 import { useAction, useResource } from '../lib/hooks';
 import { useMe, useSession } from '../lib/session';
@@ -20,6 +20,7 @@ import {
   PageHeader,
   Skeleton,
   TextArea,
+  useToast,
 } from '../components/ui';
 
 export function AccountPage() {
@@ -50,21 +51,14 @@ export function AccountPage() {
               me.user.roles.map((x) => GLOBAL_ROLE_LABELS[x]).join(', ') || 'None assigned yet',
             ],
             ['Status', titleCase(me.user.status)],
-            ['Outlook connected', me.outlookConsent ? 'Yes' : 'No'],
           ]}
         />
-        <p className="hint">
-          Your name and email come from Microsoft 365. Ask an administrator to change your roles.
-        </p>
+        <p className="hint">Ask an administrator to change your name, email or roles.</p>
         <div className="row">
           <ButtonLink to="/welcome">Setup checklist</ButtonLink>
-          {!me.outlookConsent && (
-            <a className="btn btn-secondary" href="/api/auth/consent?returnTo=%2Faccount">
-              Connect Outlook
-            </a>
-          )}
         </div>
       </Card>
+      <ChangePassword />
       <Card title="Deactivate access">
         {r.loading ? (
           <Skeleton />
@@ -97,8 +91,8 @@ export function AccountPage() {
           <>
             <p>
               Requesting deactivation removes your access to this application after an administrator
-              approves it. It does <strong>not</strong> delete your Microsoft 365 account, project
-              workbooks, client documents, or the history of your work, which are kept for audit.
+              approves it. It does <strong>not</strong> delete projects, client documents, or the
+              history of your work, which are kept for audit.
             </p>
             {r.data!.activePmProjects.length > 0 && (
               <div className="notice">
@@ -178,9 +172,9 @@ function DeactivateDialog({
         <div className="notice">
           For your security, please sign in again, then return here to submit.
           <div>
-            <a className="btn btn-primary" href={loginUrl('/account', 'login')}>
+            <Button variant="primary" onClick={() => void signInAgain('/account')}>
               Sign in again
-            </a>
+            </Button>
           </div>
         </div>
       ) : (
@@ -216,5 +210,68 @@ function DeactivateDialog({
         label="I understand the consequences described above."
       />
     </Dialog>
+  );
+}
+
+function ChangePassword() {
+  const toast = useToast();
+  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirm: '' });
+  const mismatch = form.confirm.length > 0 && form.confirm !== form.newPassword;
+  const save = useAction(async () => {
+    await post('/api/account/password', {
+      currentPassword: form.currentPassword,
+      newPassword: form.newPassword,
+    });
+    setForm({ currentPassword: '', newPassword: '', confirm: '' });
+    toast('success', 'Password changed. Your other devices have been signed out.');
+  });
+  const field = (k: keyof typeof form, label: string, hint?: string, error?: string) => (
+    <Field label={label} hint={hint} error={error}>
+      {(a) => (
+        <Input
+          {...a}
+          type="password"
+          autoComplete={k === 'currentPassword' ? 'current-password' : 'new-password'}
+          value={form[k]}
+          onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
+        />
+      )}
+    </Field>
+  );
+  return (
+    <Card title="Change password">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!mismatch) void save.run();
+        }}
+        noValidate
+      >
+        {field('currentPassword', 'Current password')}
+        {field(
+          'newPassword',
+          'New password',
+          'At least 10 characters.',
+          save.error?.fields.newPassword,
+        )}
+        {field(
+          'confirm',
+          'Repeat new password',
+          undefined,
+          mismatch ? 'The passwords do not match.' : undefined,
+        )}
+        <InlineError error={save.error} />
+        <div className="form-actions">
+          <Button
+            type="submit"
+            variant="primary"
+            loading={save.pending}
+            disabled={!form.currentPassword || !form.newPassword || mismatch}
+          >
+            Change password
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }

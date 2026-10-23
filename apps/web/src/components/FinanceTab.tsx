@@ -17,7 +17,7 @@ import {
   useToast,
 } from './ui';
 
-/** Column names as used in Chat360's tracker (also the Excel Finance sheet headers). */
+/** Column names as used in Chat360's tracker (also the Finance sheet headers in the download). */
 export const FINANCE_LABELS = {
   raisedOverdue: 'Amount Raised and Overdue (for Go-Live)',
   raisable: 'Amount that can be raised on immediate basis',
@@ -73,8 +73,8 @@ export function FinanceTab({ p, reload }: { p: ProjectView; reload: () => Promis
       </p>
       {f.remarks && <p className="pre">{f.remarks}</p>}
       <p className="notice">
-        These figures also appear on the <strong>Finance</strong> sheet of the Excel tracker, which
-        anyone with access to the project folder can open.
+        These figures also appear on the <strong>Finance</strong> sheet of the downloaded Excel
+        tracker, but only for people who may see finance here.
       </p>
       {editing && (
         <FinanceDialog
@@ -123,7 +123,7 @@ function FinanceDialog({
       remarks: form.remarks,
       expectedUpdatedAt: f.updatedAt,
     });
-    toast('success', 'Finance updated. The Excel Finance sheet will update in the background.');
+    toast('success', 'Finance updated.');
     onDone();
   });
   const e = save.error?.fields ?? {};

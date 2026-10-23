@@ -122,7 +122,7 @@ export function DashboardPage() {
               }
             >
               {projects.data!.canCreate
-                ? 'Create your first project to generate its Excel tracker.'
+                ? 'Create your first project to start tracking its delivery.'
                 : 'You will see projects here once you are added to a project team.'}
             </EmptyState>
           ) : (

@@ -16,7 +16,6 @@ import type { JobRun } from '../ports';
 import { PATHS } from '../store/repos';
 import { deliverNotifications } from '../services/notifications';
 import { executeTransfer } from '../services/transfers';
-import { syncWorkbook } from '../services/workbook';
 
 export const JOB_NAMES = [
   'daily_confirmation',
@@ -100,15 +99,12 @@ export async function runJob(deps: Deps, job: JobName, trigger: string): Promise
           const n = await deliverNotifications(deps, p.id);
           bump(run.stats, 'notificationsSent', n.sent);
           bump(run.stats, 'notificationsFailed', n.failed);
-          await syncAndCount(deps, p.id, run, true);
         });
     }
 
     if (job === 'morning_reminders') {
       if (!isWorkingDay(today, calendarOf(config))) run.stats.nonWorkingDay = 1;
       else await sendReminders(deps, active, today, run);
-      // Weekly planning: the This Week / Last Week sheets roll over on the first working day.
-      await each(async (p) => syncAndCount(deps, p.id, run, true));
     }
 
     if (job === 'maintenance') {
@@ -124,12 +120,6 @@ export async function runJob(deps: Deps, job: JobName, trigger: string): Promise
         for (const t of transfersNeedingExecution(data, today)) {
           const r = await executeTransfer(deps, p.id, t.id, SYSTEM_ACTOR);
           bump(run.stats, r.status === 'completed' ? 'transfersCompleted' : 'transfersIncomplete');
-        }
-        if (
-          data.workbook.driveItemId &&
-          (data.workbook.syncedRevision < data.revision || data.workbook.state === 'failed')
-        ) {
-          await syncAndCount(deps, p.id, run, false);
         }
       });
       await deps.coord.purgeExpired();
@@ -153,15 +143,6 @@ export async function runJob(deps: Deps, job: JobName, trigger: string): Promise
     });
   }
   return run;
-}
-
-async function syncAndCount(deps: Deps, projectId: string, run: JobRun, refresh: boolean) {
-  const r = await syncWorkbook(deps, projectId, { refresh });
-  bump(run.stats, `sync_${r.status}`);
-  if (r.status === 'failed') {
-    run.ok = false;
-    run.errors.push(`${projectId}: workbook sync failed: ${r.error}`);
-  }
 }
 
 /** One digest per owner of tasks due today. Deduplicated per owner per date via the Coordinator. */

@@ -67,15 +67,3 @@ export function templateVars(
   }
   return vars;
 }
-
-/** Splits recipients into internal (allowed domains) and external, for confirmation prompts. */
-export function classifyRecipients(addresses: string[], internalDomains: string[]) {
-  const domains = internalDomains.map((d) => d.toLowerCase());
-  const internal: string[] = [];
-  const external: string[] = [];
-  for (const a of addresses) {
-    const domain = a.split('@').pop()?.toLowerCase() ?? '';
-    (domains.includes(domain) ? internal : external).push(a);
-  }
-  return { internal, external };
-}

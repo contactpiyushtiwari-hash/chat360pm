@@ -6,19 +6,19 @@ Rules:
 
 - Every material decision gets an `ADR-NNN` entry with the actual date.
 - Accepted decisions are never silently rewritten. To change one, mark it **Superseded** and add a new ADR that references it.
-- "Validation" lists only what was actually executed. External approvals (Chat360 IT, Microsoft tenant admins) are listed as **pending** until they really happen; none have happened yet.
+- "Validation" lists only what was actually executed. External approvals and live deployments are listed as **pending** until they really happen.
 
 | ID      | Title                                                                               | Status                 |
 | ------- | ----------------------------------------------------------------------------------- | ---------------------- |
 | ADR-001 | TypeScript monorepo: core domain + API Worker + React SPA                           | Accepted               |
-| ADR-002 | Cloudflare Pages for the SPA, Worker for the API, same origin via service binding   | Accepted               |
-| ADR-003 | OneDrive as system of record; Durable Object for coordination state only            | Accepted               |
+| ADR-002 | Cloudflare Pages for the SPA, Worker for the API, same origin via service binding   | Superseded by ADR-021  |
+| ADR-003 | OneDrive as system of record; Durable Object for coordination state only            | Superseded by ADR-021  |
 | ADR-004 | Optimistic concurrency with OneDrive eTags; idempotency keys                        | Accepted               |
 | ADR-005 | Generate `.xlsx` with an in-house OOXML writer                                      | Accepted               |
-| ADR-006 | Excel synchronisation: keyed, non-destructive, conflict-detecting, one-way          | Accepted               |
+| ADR-006 | Excel synchronisation: keyed, non-destructive, conflict-detecting, one-way          | Superseded by ADR-021  |
 | ADR-007 | Transfer execution as recorded, resumable steps                                     | Accepted               |
 | ADR-008 | Provisional tracker schema and project templates                                    | Accepted (provisional) |
-| ADR-009 | Authentication: Entra ID OIDC, server-side sessions, least-privilege Graph scopes   | Accepted               |
+| ADR-009 | Authentication: Entra ID OIDC, server-side sessions, least-privilege Graph scopes   | Superseded by ADR-022  |
 | ADR-010 | Authorisation: global roles + per-project access ladder; admins get no project data | Accepted               |
 | ADR-011 | Scheduling with Cron Triggers, leases and idempotent jobs; admin kill switch        | Accepted               |
 | ADR-012 | Notifications are at-most-once with visible outcomes                                | Accepted               |
@@ -30,6 +30,8 @@ Rules:
 | ADR-018 | In-memory adapters and developer sign-in for local development only                 | Accepted               |
 | ADR-019 | Project finance: app record + seventh "Finance" tracker sheet                       | Accepted               |
 | ADR-020 | Single-Worker deployment option (Workers static assets) for Git-connected builds    | Accepted               |
+| ADR-021 | Cloudflare D1 replaces OneDrive; Excel tracker generated on download                | Accepted               |
+| ADR-022 | Email + password sign-in replaces Microsoft Entra ID                                | Accepted               |
 
 ---
 
@@ -55,7 +57,7 @@ Rules:
 ## ADR-002 — Cloudflare Pages for the SPA, Worker for the API, same origin via service binding
 
 - **Date:** 2026-10-19
-- **Status:** Accepted
+- **Status:** Superseded by ADR-021 (2026-10-23): only the single-Worker deployment of ADR-020 remains.
 - **Context:** The brief requires Pages for the frontend and Workers for the backend. Session cookies should be `SameSite=Strict` and we want no CORS surface.
 - **Alternatives:** (1) API on a separate hostname with CORS and `SameSite=None` cookies; (2) Worker routes on the Pages custom domain; (3) **a Pages Function at `functions/api/[[path]].ts` that forwards `/api/*` to the API Worker through a service binding.**
 - **Decision:** Option 3.
@@ -67,7 +69,7 @@ Rules:
 ## ADR-003 — OneDrive as system of record; Durable Object for coordination state only
 
 - **Date:** 2026-10-19
-- **Status:** Accepted
+- **Status:** Superseded by ADR-021 (2026-10-23). The Durable Object part still holds.
 - **Context:** The brief forbids a database by default and requires OneDrive/Excel as primary storage. The application still needs sessions (with encrypted Microsoft tokens), rate limits, leases to stop concurrent jobs, and short-lived idempotency memos. Background jobs must run without any user's browser or delegated token.
 - **Alternatives considered:**
   1. Everything in Excel — Excel is not transactional; storing transfers/audit/history in cells is fragile.
@@ -108,7 +110,7 @@ Rules:
 ## ADR-006 — Excel synchronisation: keyed, non-destructive, conflict-detecting, one-way
 
 - **Date:** 2026-10-19
-- **Status:** Accepted
+- **Status:** Superseded by ADR-021 (2026-10-23): there is no stored workbook to synchronise.
 - **Context:** Excel must remain the official tracker, people may edit it directly, and the brief forbids blind overwrites.
 - **Decision:** After each project change the API syncs in the background (and hourly/daily jobs retry). Sync reads each Excel table once (one `$batch`, inside a workbook session) and computes a plan in `@chat360/core` (`planTableSync`):
   - rows are matched by stable key columns (Task ID, API ID, Escalation ID, Week Of + Task ID), never by position;
@@ -145,7 +147,7 @@ Rules:
 ## ADR-009 — Authentication: Entra ID OIDC, server-side sessions, least-privilege Graph scopes
 
 - **Date:** 2026-10-19
-- **Status:** Accepted
+- **Status:** Superseded by ADR-022 (2026-10-23). The session design (hashed cookie, Strict, idle/absolute limits) is kept.
 - **Decision:**
   - Authorization-code flow with PKCE against the Chat360 tenant authority (single tenant). The Worker is a confidential client; the ID token is verified (signature via tenant JWKS, issuer, audience, nonce, `tid`).
   - At sign-in the app calls `/me` and refuses guests (`userType != Member`, `#EXT#` UPNs) and disabled accounts; the email domain must be in `ALLOWED_EMAIL_DOMAINS` as a consistency check only — **never** as authorisation. Recommended in addition: Entra "assignment required" for the enterprise app.
@@ -250,3 +252,36 @@ Rules:
 - **Trade-offs/risks:** The Worker name in `wrangler.toml` must match the Worker connected in the dashboard (`chat360pm`). Two configs (root and `apps/api`) define the same Worker code; keep their bindings and crons in step.
 - **Bug found and fixed while validating:** the API reused one Durable Object stub, one in-flight token fetch and one remote JWKS loader across requests. Workers reject I/O objects created during a different request, so **every sign-in failed** with a 500 in `workerd`. Stubs are now obtained per call, the app-token cache stores only the token string, and the JWKS loader is created per verification.
 - **Validation:** `wrangler deploy --dry-run` with the custom build; `wrangler dev` of the root config: `/`, deep links and `/login` serve the app with the CSP header; `/api/health` returns 503 `service_misconfigured` without settings and 200 with settings; repeated `/api/auth/login` requests redirect to Microsoft (previously 500); client error reporting works. **Pending:** the real Workers Build in Chat360's Cloudflare account.
+
+## ADR-021 — Cloudflare D1 replaces OneDrive; Excel tracker generated on download
+
+- **Date:** 2026-10-23
+- **Status:** Accepted. Supersedes ADR-002, ADR-003 (storage part) and ADR-006. Amends ADR-004 (same compare-and-swap rule, new mechanism), ADR-012 (no mail provider yet) and ADR-019 (Finance sheet is now in the download).
+- **Context:** Chat360 asked for an application that does not need Excel or OneDrive, hosted for free. Cloudflare's free plan was chosen over Netlify and Vercel: it allows business use, runs the hourly jobs, and the code already ran there. Storage chosen by Chat360: Cloudflare D1 (free).
+- **Decision:**
+  - Every business document that lived in OneDrive (`project.json` per project, `_system/*.json`) is now one row in a D1 table `docs(path, data, etag, updated_at)`, created on first use. Document paths, the `Repos` layer and every domain rule are unchanged.
+  - Compare-and-swap stays (ADR-004): the eTag is a random version stamp; a create is `INSERT … ON CONFLICT DO NOTHING` and an update is `UPDATE … WHERE path = ? AND etag = ?`. Zero changed rows raises `PreconditionFailedError`, which `Repos.update` retries exactly as it did for OneDrive 412s.
+  - The Excel tracker is no longer stored or synchronised. `GET /api/projects/:id/tracker.xlsx` generates it from the current project with the existing writer (ADR-005), so it is always current and cannot conflict. Finance figures are removed from the download for callers who may not see finance, which fixes the confidentiality gap noted in ADR-019.
+  - Removed: Microsoft Graph client, OneDrive store, workbook gateway and sync planner, Outlook mail/calendar, the separate Pages project and API Worker config, the manual deploy workflow. Email drafts now open in the employee's own mail app (`mailto:`).
+  - No mail provider is configured, so notifications are recorded truthfully as "not configured"; escalations and reminders are visible in the app.
+  - Product analytics go to Workers Logs; the Analytics Engine binding was removed so a free-plan deploy cannot fail on it (the code still uses it if a binding named `ANALYTICS` is added).
+- **Alternatives considered:** keep data in the Coordinator Durable Object (no setup step, but no data console and mixes business data into coordination state); Supabase/Neon (second account, free projects pause); one SQL table per entity (large rewrite of tested domain code for no user-visible gain).
+- **Trade-offs/risks:** A whole project is one row; D1 caps a row at 2 MB, enough for thousands of tasks (marked in code). OneDrive version history is gone: point-in-time recovery uses D1 Time Travel. Free-plan Workers have a 10 ms CPU limit per request; generating a large tracker or hashing a password is the most likely to exceed it (see `docs/infrastructure.md`).
+- **Affected:** `apps/api/src/store/d1-store.ts`, `apps/api/src/index.ts`, `apps/api/src/routes/projects.ts`, `apps/api/src/routes/email.ts`, `packages/core` (workbook state, communications, `tracker.download` permission), `wrangler.toml`, web project/email pages, all docs.
+- **Validation performed:** D1 store tests over SQLite (`node:sqlite`): create-once, stale eTag rejected, folder listing, ten concurrent read-modify-writes all kept; API, core, web and Playwright suites; `wrangler dev` of the root config with local D1: first-admin setup, password sign-in, project create, task edit, tracker download containing the edit, user creation, manual job run. **Pending:** a deploy to Chat360's Cloudflare account with a real D1 database.
+
+## ADR-022 — Email + password sign-in replaces Microsoft Entra ID
+
+- **Date:** 2026-10-23
+- **Status:** Accepted. Supersedes ADR-009. Reverses ADR-009's rejection of a separate password system, at Chat360's request (no Microsoft setup).
+- **Decision:**
+  - Administrators add employees (name, email, roles) and receive a **one-time set-password link** valid for 7 days. The token is in the URL fragment (not sent in requests or logged by the server), stored only as a SHA-256 hash, and removed when used. Forgotten passwords: an admin issues a new link; the old password works until it is used.
+  - The first administrator is created on the sign-in page with the `SETUP_CODE` secret (12+ characters outside development). Setup is refused once any active administrator has a password.
+  - Passwords: PBKDF2-SHA256, 100,000 iterations (the Workers maximum), random salt, 10–200 characters, no composition rules. Hashes live in `_system/credentials.json`, separate from the directory.
+  - Login returns one generic error for unknown email and wrong password, and verifies against a dummy hash when the email is unknown so timing does not reveal accounts. Rate limits: 30 attempts per IP per 10 minutes, 10 per email per 15 minutes.
+  - Setting or changing a password signs out the user's other sessions. Sessions are unchanged from ADR-009 (random cookie, only its hash stored, `__Host-`, HttpOnly, Secure, SameSite=Strict, 12 h absolute / 8 h idle). Roles are still never granted from an email domain.
+  - `TOKEN_ENCRYPTION_KEY` and `COOKIE_SECRET` are gone: nothing is encrypted at rest any more and analytics user ids are random UUIDs hashed without a key.
+- **Alternatives considered:** magic-link email sign-in (needs a mail provider); Google/GitHub OAuth (another external setup); Cloudflare Access (free for 50 users, but an extra product to configure).
+- **Trade-offs/risks:** The app now owns password security; there is no multi-factor authentication and no self-service reset email. PBKDF2 is weaker than Argon2/scrypt against offline cracking; it is the strongest option the Workers runtime provides natively. Adding Cloudflare Access in front of the Worker is the recommended hardening if needed.
+- **Affected:** `apps/api/src/routes/auth.ts`, `routes/admin.ts`, `routes/account.ts`, `auth/crypto.ts`, `env.ts`, `store/repos.ts`; `packages/core/src/schemas.ts`, `onboarding.ts`; web `Login`, `SetPassword`, `Admin`, `Account` pages.
+- **Validation performed:** API tests (correct/wrong/unknown login with identical messages, salted hashes and no plaintext stored, deactivated refusal, login rate limit, admin-created user → link → password → sign-in, single-use and expiring links, change password revokes other sessions, first-admin setup code and one-time rule, setup unavailable without a code); Playwright (password sign-in, admin adds employee who sets a password); `wrangler dev` (setup, wrong and right password). **Pending:** a real deployment.

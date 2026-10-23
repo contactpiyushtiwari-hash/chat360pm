@@ -1,3 +1,4 @@
+import { strFromU8, unzipSync } from 'fflate';
 import { createApp } from '../src/app';
 import { memoryDeps, type MemoryDeps } from '../dev/memory-deps';
 import { seedDemo } from '../dev/seed';
@@ -68,3 +69,13 @@ export const readJson = async (res: Response): Promise<any> => res.json();
 
 export type Ctx = Awaited<ReturnType<typeof setup>>;
 export type { MemoryDeps };
+
+/** Downloads a project tracker and returns the XML of all its parts, for content assertions. */
+export async function trackerText(client: Client, projectId: string): Promise<string> {
+  const res = await client.get(`/api/projects/${projectId}/tracker.xlsx`);
+  if (res.status !== 200) throw new Error(`tracker download failed: ${res.status}`);
+  const files = unzipSync(new Uint8Array(await res.arrayBuffer()));
+  return Object.values(files)
+    .map((f) => strFromU8(f))
+    .join('\n');
+}

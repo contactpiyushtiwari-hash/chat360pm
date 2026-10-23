@@ -1,6 +1,6 @@
 import { clientErrorSchema, productEventSchema } from '@chat360/core';
 import { Hono } from 'hono';
-import { hmac } from '../auth/crypto';
+import { sha256Hex } from '../auth/crypto';
 import { body, clientIp, limit, requireUser, type AppEnv } from '../http/context';
 import { redactText } from '../observability/redact';
 
@@ -42,10 +42,8 @@ telemetryRoutes.post('/events', async (c) => {
   const deps = c.get('deps');
   await limit(c, `events:${user.id}`, 120, 60);
   const input = await body(c, productEventSchema);
-  const userHash = (await hmac(deps.config.cookieSecret, 'analytics-user-v1', user.id)).slice(
-    0,
-    16,
-  );
+  // User ids are random UUIDs, so an unkeyed hash is enough to keep them out of analytics.
+  const userHash = (await sha256Hex(`analytics-user-v1:${user.id}`)).slice(0, 16);
   deps.analytics.track(input.name, {
     userHash,
     role: user.roles[0] ?? 'none',

@@ -232,6 +232,38 @@ export const adminUserUpdateSchema = z.object({
   status: z.enum(['active', 'deactivated']).optional(),
 });
 
+const email = z.string().trim().toLowerCase().email('Enter a valid email address').max(320);
+// Upper bound keeps PBKDF2 input small; no composition rules (NIST SP 800-63B).
+const newPassword = z
+  .string()
+  .min(10, 'Use at least 10 characters')
+  .max(200, 'Use at most 200 characters');
+
+export const loginSchema = z.object({ email, password: z.string().min(1).max(200) });
+
+export const firstAdminSchema = z.object({
+  setupCode: z.string().min(1).max(200),
+  email,
+  displayName: requiredText(120, 'Name'),
+  password: newPassword,
+});
+
+export const setPasswordSchema = z.object({
+  token: z.string().min(20).max(100),
+  password: newPassword,
+});
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword,
+});
+
+export const adminCreateUserSchema = z.object({
+  email,
+  displayName: requiredText(120, 'Name'),
+  roles: z.array(z.enum(GLOBAL_ROLES)).max(GLOBAL_ROLES.length).default([]),
+});
+
 export const onboardingUpdateSchema = z.object({
   completeSteps: z.array(z.string().max(60)).max(30).default([]),
   skipSteps: z.array(z.string().max(60)).max(30).default([]),
@@ -295,40 +327,6 @@ export const orgConfigSchema = z.object({
     .default([]),
 });
 
-export const emailPreviewSchema = z.object({
-  projectId: z.string().max(20).nullable().default(null),
-  templateId: z.string().max(40).nullable().default(null),
-  to: z.array(z.string().trim().email().max(320)).min(1).max(50),
-  cc: z.array(z.string().trim().email().max(320)).max(50).default([]),
-  subject: requiredText(255, 'Subject'),
-  body: requiredText(20000, 'Body'),
-  includeWorkbookLink: z.boolean().default(false),
-});
-export type EmailPreviewInput = z.infer<typeof emailPreviewSchema>;
-
-export const emailSendSchema = emailPreviewSchema.and(
-  z.object({
-    previewToken: z.string().min(10).max(200),
-    confirmExternal: z.boolean().default(false),
-  }),
-);
-
-export const meetingSchema = z
-  .object({
-    projectId: z.string().max(20).nullable().default(null),
-    subject: requiredText(255, 'Subject'),
-    start: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'Start must be YYYY-MM-DDTHH:mm'),
-    end: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, 'End must be YYYY-MM-DDTHH:mm'),
-    timeZone: z.string().min(1).max(64),
-    attendees: z.array(z.string().trim().email().max(320)).max(100).default([]),
-    agenda: text(8000).default(''),
-    location: text(255).default(''),
-    online: z.boolean().default(false),
-    confirmExternal: z.boolean().default(false),
-  })
-  .refine((v) => v.end > v.start, { message: 'End must be after start', path: ['end'] });
-export type MeetingInput = z.infer<typeof meetingSchema>;
-
 export const clientErrorSchema = z.object({
   message: z.string().max(1000),
   stack: z.string().max(8000).optional(),
@@ -343,8 +341,8 @@ export const PRODUCT_EVENTS = [
   'view_kanban',
   'view_gantt',
   'view_list',
-  'workbook_opened',
-  'email_preview_opened',
+  'tracker_downloaded',
+  'email_draft_opened',
   'support_page_viewed',
 ] as const;
 export const productEventSchema = z.object({
