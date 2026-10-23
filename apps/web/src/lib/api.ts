@@ -106,7 +106,8 @@ export const post = <T>(path: string, body: unknown = {}, idempotencyKey?: strin
 export const patch = <T>(path: string, body: unknown) => api<T>(path, { method: 'PATCH', body });
 export const put = <T>(path: string, body: unknown) => api<T>(path, { method: 'PUT', body });
 
-export function loginUrl(returnTo: string, prompt?: 'login') {
-  const q = new URLSearchParams({ returnTo, ...(prompt ? { prompt } : {}) });
-  return `/api/auth/login?${q.toString()}`;
+/** Ends the current session and opens sign-in, for actions that need a fresh sign-in. */
+export async function signInAgain(returnTo: string) {
+  await post('/api/auth/logout').catch(() => undefined);
+  window.location.assign(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 }

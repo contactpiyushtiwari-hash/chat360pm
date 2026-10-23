@@ -6,6 +6,8 @@ import { ApiError, api } from '../src/lib/api';
 import { AppRoutes } from '../src/App';
 import { SessionProvider } from '../src/lib/session';
 import { Dialog, EmptyState, ErrorState, Spinner, ToastProvider } from '../src/components/ui';
+import { mailtoHref } from '../src/pages/Email';
+import { safeReturnTo } from '../src/pages/Login';
 import { NotFoundPage } from '../src/pages/NotFound';
 
 const me = {
@@ -18,7 +20,6 @@ const me = {
   },
   permissions: { createProject: false, portfolio: false, admin: false },
   onboarding: { steps: [], complete: true, missingRequired: [] },
-  outlookConsent: false,
   environment: 'production',
   devAuth: false,
   notificationsConfigured: true,
@@ -71,9 +72,9 @@ describe('UI states', () => {
 
   it('error state explains recovery and shows the error ID', () => {
     const err = new ApiError(
-      502,
-      'graph_permission_denied',
-      'Microsoft 365 denied this operation.',
+      500,
+      'internal_error',
+      'Something went wrong. Quote the error ID if you contact support.',
       undefined,
       'req-1',
       'ERR-ABCD',
@@ -85,7 +86,7 @@ describe('UI states', () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'An administrator needs to check the app permissions',
+      'raise a support request with the error ID',
     );
     expect(screen.getByText('Error ID: ERR-ABCD')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Get help' })).toBeInTheDocument();
@@ -122,12 +123,19 @@ describe('routing and session', () => {
         status: 401,
         body: { error: { code: 'unauthenticated', message: 'Please sign in.' } },
       },
-      '/api/auth/config': { body: { devAuth: false, entraConfigured: true } },
+      '/api/auth/config': { body: { devAuth: false, setupAvailable: false } },
     });
     renderAt('/projects');
-    expect(
-      await screen.findByRole('link', { name: /Sign in with your Chat360 Microsoft account/ }),
-    ).toHaveAttribute('href', '/api/auth/login?returnTo=%2Fprojects');
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Work email/)).toHaveAttribute('type', 'email');
+    expect(screen.queryByRole('button', { name: 'First-time setup' })).toBeNull();
+  });
+
+  it('keeps sign-in redirects on this site', () => {
+    expect(safeReturnTo('//evil.com')).toBe('/');
+    expect(safeReturnTo('/\\evil.com')).toBe('/');
+    expect(safeReturnTo('https://evil.com')).toBe('/');
+    expect(safeReturnTo('/projects/PRJ-1')).toBe('/projects/PRJ-1');
   });
 
   it('shows the 404 page for unknown routes when signed in', async () => {
@@ -167,16 +175,9 @@ describe('routing and session', () => {
     expect(screen.getByRole('heading', { name: 'Page not found' })).toBeInTheDocument();
   });
 
-  it('asks to connect Outlook before email features', async () => {
-    mockFetch({
-      '/api/me': { body: me },
-      '/api/directory/users': { body: { users: [] } },
-      '/api/projects': { body: { projects: [] } },
-    });
-    renderAt('/email');
-    expect(await screen.findByRole('link', { name: 'Connect Outlook' })).toHaveAttribute(
-      'href',
-      '/api/auth/consent?returnTo=%2Femail',
+  it('turns an email draft into a mailto link for the user’s own mail app', () => {
+    expect(mailtoHref('a@x.example, b@y.example', '', 'Status update', 'Line 1\nLine 2')).toBe(
+      'mailto:a@x.example,b@y.example?subject=Status%20update&body=Line%201%0ALine%202',
     );
   });
 });

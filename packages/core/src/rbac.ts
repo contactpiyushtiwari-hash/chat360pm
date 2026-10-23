@@ -120,9 +120,7 @@ export type ProjectAction =
   | 'task.edit_any'
   | 'api.manage'
   | 'escalation.manage'
-  | 'workbook.sync'
-  | 'workbook.resolve_conflict'
-  | 'communication.log'
+  | 'tracker.download'
   | 'transfer.request'
   | 'finance.view'
   | 'finance.edit'
@@ -137,9 +135,7 @@ const REQUIRED: Record<ProjectAction, ProjectAccessLevel> = {
   'task.edit_any': 'manager',
   'api.manage': 'contributor',
   'escalation.manage': 'manager',
-  'workbook.sync': 'contributor',
-  'workbook.resolve_conflict': 'manager',
-  'communication.log': 'contributor',
+  'tracker.download': 'read',
   'transfer.request': 'manager',
   'finance.view': 'contributor',
   'finance.edit': 'contributor',

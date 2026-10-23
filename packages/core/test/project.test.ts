@@ -71,7 +71,7 @@ describe('project creation', () => {
         ctx(people.pm),
         { findUser },
       ),
-    ).toThrow(/approved OneDrive location/);
+    ).toThrow(/Unknown project destination/);
   });
 
   it('sanitises folder names', () => {

@@ -10,23 +10,23 @@ Before changing anything, read the docs that apply to your change:
 
 ## Non-negotiable architecture
 
-- **OneDrive-first.** Business records live as JSON documents and `.xlsx` trackers in the approved OneDrive/SharePoint library via Microsoft Graph (ADR-003). Do not add a database, VPS or object store. The `Coordinator` Durable Object holds coordination state only — never business records.
-- **Excel is the official tracker** and is a keyed, non-destructive projection of `project.json` (ADR-005/006). Never regenerate or blindly overwrite an existing workbook; never delete rows.
-- **Every write is eTag compare-and-swap** through `Repos.update` / `mutateProject` (ADR-004). Mutations must be deterministic functions of the document because they re-run on 412.
+- **Free Cloudflare, no Microsoft 365.** One Worker serves the website and API (ADR-020). Business records are JSON documents in Cloudflare D1, one row per path, via `D1DocStore` (ADR-021). Do not add another database, VPS, object store or paid service. The `Coordinator` Durable Object holds coordination state only — never business records.
+- **The Excel tracker is generated on download** from `project.json` (`GET /api/projects/:id/tracker.xlsx`, ADR-021). It is never stored or synchronised. Finance figures are stripped for callers without finance access.
+- **Every write is eTag compare-and-swap** through `Repos.update` / `mutateProject` (ADR-004, ADR-021). Mutations must be deterministic functions of the document because they re-run when a write loses a race.
 - **Business rules live in `packages/core`** (no I/O). The API composes them; the UI never re-implements authorisation.
 - **Authorisation is server-side** on every request (`packages/core/src/rbac.ts`). Never grant roles or access from an email domain. Admins get no implicit project access.
-- **Least-privilege Graph** (ADR-009). Do not add broader permissions without a new ADR and Chat360 approval. Never expose Microsoft tokens to the browser.
-- **Honesty:** never report success before the server/Graph confirms; record notification outcomes truthfully; do not claim live Microsoft/Cloudflare verification or real-device testing that did not happen.
+- **Email + password sign-in** (ADR-022): admins create accounts and issue one-time set-password links; the first admin uses `SETUP_CODE`. Store only PBKDF2 hashes and hashed link tokens; keep login errors generic and rate-limited.
+- **Honesty:** never report success before the server confirms; record notification outcomes truthfully (no mail provider exists: "not configured"); do not claim live Cloudflare verification or real-device testing that did not happen.
 
 ## Repository layout
 
 ```
-packages/core   domain types, schemas, rbac, tasks, escalation, transfer, analytics, workbook (xlsx writer, tracker schema, sync planner)
-apps/api        Hono Worker: routes, auth (Entra OIDC), Graph adapters, Coordinator DO, services, cron jobs; dev/ = in-memory dev server + seed
-apps/web        React SPA (Vite), Pages Function proxy in functions/, Playwright e2e in e2e/
+packages/core   domain types, schemas, rbac, tasks, escalation, transfer, analytics, workbook (xlsx writer, tracker schema)
+apps/api        Hono Worker: routes, password auth, D1 document store, Coordinator DO, services, cron jobs; dev/ = in-memory dev server + seed
+apps/web        React SPA (Vite), Playwright e2e in e2e/
 docs            the eight mandatory documents + screenshots
 scripts         workbook validation (Python/openpyxl/LibreOffice)
-wrangler.toml   single-Worker deployment (website as static assets + API), used by Workers Builds (ADR-020)
+wrangler.toml   the only deployment: one Worker (website as static assets + API), D1 + DO bindings, used by Workers Builds (ADR-020/021)
 ```
 
 ## Commands
@@ -39,7 +39,7 @@ wrangler.toml   single-Worker deployment (website as static assets + API), used 
 - New inputs get a zod schema in `packages/core/src/schemas.ts`; new endpoints go in `docs/api_guidelines.md`.
 - Creates take an `Idempotency-Key`; state-changing requests need `X-Requested-With: chat360` (the web `api()` helper does this).
 - Every UI data view needs loading, empty, error and permission-aware states (`docs/design_system.md`).
-- Tests: domain rules in `packages/core/test`; HTTP behaviour in `apps/api/test` using `dev/memory-deps.ts`; Graph request shapes in `apps/api/test/graph.test.ts`. In-memory tests do not verify Microsoft integration — say so.
+- Tests: domain rules in `packages/core/test`; HTTP behaviour in `apps/api/test` using `dev/memory-deps.ts`; D1 SQL in `apps/api/test/d1-store.test.ts` (Node SQLite, not real D1 — say so).
 - Worker code must not reuse request-scoped I/O across requests (Durable Object stubs, in-flight fetch promises): Workers reject it. Verify runtime changes with `wrangler dev`, not only Node tests.
 - Never commit secrets, `.dev.vars`, or real employee/client names or emails. Demo data must stay fictional.
 

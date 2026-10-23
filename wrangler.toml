@@ -1,12 +1,10 @@
 # Single-Worker deployment used by Cloudflare Workers Builds (Git-connected, root directory "/").
 # One Worker serves the web app as static assets and runs the API for /api/* (ADR-020).
-# The two-project setup (apps/api Worker + apps/web Pages) remains available; see docs/deployment.md.
+# All data lives in the D1 database below (ADR-021). See docs/deployment.md.
 #
-# Tenant-specific values are NOT stored here. Set them in the Cloudflare dashboard
-# (Worker → Settings → Variables and Secrets); `keep_vars` stops deploys from erasing them:
-#   APP_ORIGIN, ENTRA_TENANT_ID, ENTRA_CLIENT_ID, GRAPH_DRIVE_ID, BOOTSTRAP_ADMIN_OIDS,
-#   NOTIFICATION_MAILBOX (optional)
-#   Secrets: ENTRA_CLIENT_SECRET, TOKEN_ENCRYPTION_KEY, COOKIE_SECRET
+# Set these in the Cloudflare dashboard (Worker → Settings → Variables and Secrets);
+# `keep_vars` stops deploys from erasing them:
+#   APP_ORIGIN (text) and SETUP_CODE (secret, 12+ characters, lets the first admin sign up)
 name = "chat360pm"
 main = "apps/api/src/index.ts"
 compatibility_date = "2025-10-01"
@@ -27,7 +25,10 @@ run_worker_first = ["/api/*"]
 enabled = true
 head_sampling_rate = 1
 
-# UTC; defaults assume Asia/Kolkata (see apps/api/wrangler.toml for the schedule meaning).
+# Times are UTC. Defaults assume the org timezone Asia/Kolkata (UTC+5:30):
+#   03:30 UTC = 09:00 IST morning reminders
+#   13:30 UTC = 19:00 IST end-of-day confirmation check and escalations
+#   :15 hourly maintenance (SLA escalation ladder, notification retries, transfers)
 [triggers]
 crons = ["30 3 * * *", "30 13 * * *", "15 * * * *"]
 
@@ -39,14 +40,17 @@ class_name = "Coordinator"
 tag = "v1"
 new_sqlite_classes = ["Coordinator"]
 
-[[analytics_engine_datasets]]
-binding = "ANALYTICS"
-dataset = "chat360_ops_events"
+# Create the database once (Storage & Databases → D1 → Create, name "chat360pm") and paste its ID here.
+[[d1_databases]]
+binding = "DB"
+database_name = "chat360pm"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Product analytics go to Workers Logs. To use Workers Analytics Engine instead, add an
+# [[analytics_engine_datasets]] binding named ANALYTICS.
 
 # Safe constants only. They fail closed: no developer sign-in, no in-memory storage.
 [vars]
 ENVIRONMENT = "production"
-STORAGE_BACKEND = "graph"
+STORAGE_BACKEND = "d1"
 DEV_AUTH = "disabled"
-ALLOWED_EMAIL_DOMAINS = "chat.io"
-ONEDRIVE_ROOT_PATH = "Chat360 Project Operations"

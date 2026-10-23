@@ -86,14 +86,6 @@ export function WelcomePage() {
                       Mark as understood
                     </Button>
                   )}
-              {step.id === 'outlook_consent' && step.state !== 'done' && (
-                <a
-                  className="btn btn-secondary"
-                  href={`/api/auth/consent?returnTo=${encodeURIComponent('/welcome')}`}
-                >
-                  Connect Outlook
-                </a>
-              )}
               {!step.required && step.state === 'pending' && (
                 <Button
                   variant="ghost"

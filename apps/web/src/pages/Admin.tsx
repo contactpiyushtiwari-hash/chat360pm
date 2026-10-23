@@ -42,8 +42,8 @@ export function AdminPage() {
       />
       {!me.notificationsConfigured && (
         <p className="notice">
-          The notification mailbox is not configured: escalation and reminder emails are recorded as
-          “not configured” and not sent.
+          Email notifications are not set up: escalations and reminders show in the app (Today,
+          Escalations) and are recorded as “not configured” instead of being emailed.
         </p>
       )}
       <Tabs<TabId>
@@ -76,6 +76,120 @@ interface AdminUser {
   roles: GlobalRole[];
   status: string;
   onboardingComplete: boolean;
+  passwordSet: boolean;
+}
+
+interface SetupLink {
+  url: string;
+  expiresAt: string;
+}
+
+/** Shows a one-time set-password link for the admin to pass on. It is not shown again. */
+function LinkNotice({ who, link, onClose }: { who: string; link: SetupLink; onClose: () => void }) {
+  const toast = useToast();
+  return (
+    <div className="notice" role="status">
+      <p>
+        Send this link to <strong>{who}</strong> privately (chat or email). It works once and
+        expires {fmtInstant(link.expiresAt)}. It will not be shown again.
+      </p>
+      <Input
+        readOnly
+        value={link.url}
+        aria-label="Set-password link"
+        onFocus={(e) => e.target.select()}
+      />
+      <div className="row">
+        <Button
+          onClick={() =>
+            void navigator.clipboard
+              .writeText(link.url)
+              .then(() => toast('success', 'Link copied.'))
+              .catch(() => toast('error', 'Copy failed. Select the link and copy it manually.'))
+          }
+        >
+          Copy link
+        </Button>
+        <Button variant="ghost" onClick={onClose}>
+          Done
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AddUser({ onAdded }: { onAdded: () => Promise<void> }) {
+  const [form, setForm] = useState({ displayName: '', email: '', roles: [] as GlobalRole[] });
+  const [issued, setIssued] = useState<{ who: string; link: SetupLink } | null>(null);
+  const add = useAction(async () => {
+    const r = await post<{ setupLink: SetupLink }>('/api/admin/users', form);
+    setIssued({ who: form.displayName, link: r.setupLink });
+    setForm({ displayName: '', email: '', roles: [] });
+    await onAdded();
+  });
+  const f = add.error?.fields ?? {};
+  return (
+    <Card title="Add an employee">
+      {issued && <LinkNotice who={issued.who} link={issued.link} onClose={() => setIssued(null)} />}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void add.run();
+        }}
+        noValidate
+      >
+        <div className="grid-2">
+          <Field label="Name" required error={f.displayName}>
+            {(a) => (
+              <Input
+                {...a}
+                value={form.displayName}
+                onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+              />
+            )}
+          </Field>
+          <Field label="Work email" required error={f.email}>
+            {(a) => (
+              <Input
+                {...a}
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+            )}
+          </Field>
+        </div>
+        <fieldset className="fieldset">
+          <legend>Roles</legend>
+          <div className="check-grid">
+            {GLOBAL_ROLES.map((role) => (
+              <label key={role} className="check-pill">
+                <input
+                  type="checkbox"
+                  checked={form.roles.includes(role)}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      roles: e.target.checked
+                        ? [...form.roles, role]
+                        : form.roles.filter((x) => x !== role),
+                    })
+                  }
+                />
+                {GLOBAL_ROLE_LABELS[role]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <InlineError error={add.error && !Object.keys(f).length ? add.error : null} />
+        <div className="form-actions">
+          <Button type="submit" variant="primary" loading={add.pending}>
+            Add and create set-password link
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
 }
 
 function Users() {
@@ -88,107 +202,131 @@ function Users() {
     toast('success', `Updated ${u.displayName}.`);
     await Promise.all([r.reload(), reloadDirectory()]);
   });
-  if (r.loading) return <Skeleton lines={6} />;
-  if (r.error) return <ErrorState error={r.error} onRetry={r.reload} />;
+  const [issued, setIssued] = useState<{ who: string; link: SetupLink } | null>(null);
+  const reset = useAction(async (u: AdminUser) => {
+    const res = await post<{ setupLink: SetupLink }>(`/api/admin/users/${u.id}/setup-link`);
+    setIssued({ who: u.displayName, link: res.setupLink });
+  });
+  // Keep the forms mounted during a reload so a just-issued link stays on screen.
+  if (r.loading && !r.data) return <Skeleton lines={6} />;
+  if (r.error && !r.data) return <ErrorState error={r.error} onRetry={r.reload} />;
   const users = r.data!.users.filter((u) =>
     `${u.displayName} ${u.email}`.toLowerCase().includes(q.toLowerCase()),
   );
   return (
-    <Card>
-      <p className="hint">
-        Employees appear here after their first sign-in. Roles are never granted automatically from
-        an email domain.
-      </p>
-      <InlineError error={save.error} />
-      <label className="sr-only" htmlFor="user-search">
-        Search users
-      </label>
-      <Input
-        id="user-search"
-        type="search"
-        placeholder="Search by name or email"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-      />
-      {users.length === 0 ? (
-        <EmptyState title="No users match" />
-      ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th scope="col">Employee</th>
-                <th scope="col">Roles</th>
-                <th scope="col">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id}>
-                  <td data-label="Employee">
-                    <strong>{u.displayName}</strong>
-                    <div className="hint">{u.email}</div>
-                  </td>
-                  <td data-label="Roles">
-                    <div className="check-grid">
-                      {GLOBAL_ROLES.map((role) => (
-                        <label key={role} className="check-pill">
-                          <input
-                            type="checkbox"
-                            disabled={save.pending || u.status === 'deactivated'}
-                            checked={u.roles.includes(role)}
-                            onChange={(e) =>
-                              void save.run(u, {
-                                roles: e.target.checked
-                                  ? [...u.roles, role]
-                                  : u.roles.filter((x) => x !== role),
-                              })
-                            }
-                          />
-                          {GLOBAL_ROLE_LABELS[role]}
-                        </label>
-                      ))}
-                    </div>
-                  </td>
-                  <td data-label="Status">
-                    <Badge
-                      value={
-                        u.status === 'active'
-                          ? 'done'
-                          : u.status === 'deactivated'
-                            ? 'failed'
-                            : 'pending'
-                      }
-                      label={titleCase(u.status)}
-                    />
-                    {u.status === 'deactivated' ? (
-                      <Button
-                        variant="ghost"
-                        onClick={() => void save.run(u, { status: 'active' })}
-                      >
-                        Reactivate
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        onClick={() => {
-                          if (
-                            confirm(`Deactivate ${u.displayName}? Their sessions end immediately.`)
-                          )
-                            void save.run(u, { status: 'deactivated' });
-                        }}
-                      >
-                        Deactivate
-                      </Button>
-                    )}
-                  </td>
+    <>
+      <AddUser onAdded={() => Promise.all([r.reload(), reloadDirectory()]).then(() => undefined)} />
+      <Card title="Employees">
+        <p className="hint">
+          Roles are never granted automatically. Someone who forgot their password needs a new
+          set-password link; their old password keeps working until they use it.
+        </p>
+        {issued && (
+          <LinkNotice who={issued.who} link={issued.link} onClose={() => setIssued(null)} />
+        )}
+        <InlineError error={save.error ?? reset.error} />
+        <label className="sr-only" htmlFor="user-search">
+          Search users
+        </label>
+        <Input
+          id="user-search"
+          type="search"
+          placeholder="Search by name or email"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        {users.length === 0 ? (
+          <EmptyState title="No users match" />
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th scope="col">Employee</th>
+                  <th scope="col">Roles</th>
+                  <th scope="col">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
+              </thead>
+              <tbody>
+                {users.map((u) => (
+                  <tr key={u.id}>
+                    <td data-label="Employee">
+                      <strong>{u.displayName}</strong>
+                      <div className="hint">{u.email}</div>
+                      {!u.passwordSet && <div className="hint">No password set yet</div>}
+                    </td>
+                    <td data-label="Roles">
+                      <div className="check-grid">
+                        {GLOBAL_ROLES.map((role) => (
+                          <label key={role} className="check-pill">
+                            <input
+                              type="checkbox"
+                              disabled={save.pending || u.status === 'deactivated'}
+                              checked={u.roles.includes(role)}
+                              onChange={(e) =>
+                                void save.run(u, {
+                                  roles: e.target.checked
+                                    ? [...u.roles, role]
+                                    : u.roles.filter((x) => x !== role),
+                                })
+                              }
+                            />
+                            {GLOBAL_ROLE_LABELS[role]}
+                          </label>
+                        ))}
+                      </div>
+                    </td>
+                    <td data-label="Status">
+                      <Badge
+                        value={
+                          u.status === 'active'
+                            ? 'done'
+                            : u.status === 'deactivated'
+                              ? 'failed'
+                              : 'pending'
+                        }
+                        label={titleCase(u.status)}
+                      />
+                      {u.status !== 'deactivated' && (
+                        <Button
+                          variant="ghost"
+                          loading={reset.pending}
+                          onClick={() => void reset.run(u)}
+                        >
+                          {u.passwordSet ? 'Reset password link' : 'New set-password link'}
+                        </Button>
+                      )}
+                      {u.status === 'deactivated' ? (
+                        <Button
+                          variant="ghost"
+                          onClick={() => void save.run(u, { status: 'active' })}
+                        >
+                          Reactivate
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          onClick={() => {
+                            if (
+                              confirm(
+                                `Deactivate ${u.displayName}? Their sessions end immediately.`,
+                              )
+                            )
+                              void save.run(u, { status: 'deactivated' });
+                          }}
+                        >
+                          Deactivate
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </>
   );
 }
 
@@ -223,8 +361,8 @@ function Config() {
     <Card title="Organisation configuration">
       <p className="hint">
         Timezone, working days (1 = Monday … 7 = Sunday), holidays, delay reasons, escalation levels
-        and SLAs, approved OneDrive destinations, support contact, and <code>disabledJobs</code>{' '}
-        (emergency kill switch for scheduled jobs). Validated on save.
+        and SLAs, project destinations, support contact, and <code>disabledJobs</code> (emergency
+        kill switch for scheduled jobs). Validated on save.
       </p>
       {r.data!.config.updatedAt && (
         <p className="hint">Last changed {fmtInstant(r.data!.config.updatedAt)}.</p>

@@ -1,5 +1,6 @@
 import {
   activePmProjects,
+  adminCreateUserSchema,
   adminUserUpdateSchema,
   canAdminister,
   DomainError,
@@ -14,6 +15,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { body, requireUser, type AppContext, type AppEnv } from '../http/context';
 import { runJob, JOB_NAMES, type JobName } from '../jobs/scheduled';
+import { issueSetupLink } from './auth';
 
 export const adminRoutes = new Hono<AppEnv>();
 
@@ -25,13 +27,68 @@ function requireAdmin(c: AppContext): DirectoryUser {
 
 adminRoutes.get('/users', async (c) => {
   requireAdmin(c);
-  const d = await c.get('deps').repos.directory();
+  const deps = c.get('deps');
+  const [d, cr] = await Promise.all([deps.repos.directory(), deps.repos.credentials()]);
   return c.json({
     users: d.users.map(({ onboarding, ...u }) => ({
       ...u,
       onboardingComplete: !!onboarding.completedAt,
+      passwordSet: !!cr.passwords[u.id],
     })),
   });
+});
+
+/** Adds an employee and returns a one-time link for them to choose a password. */
+adminRoutes.post('/users', async (c) => {
+  const admin = requireAdmin(c);
+  const input = await body(c, adminCreateUserSchema);
+  const deps = c.get('deps');
+  const now = deps.clock().toISOString();
+  const { result: user } = await deps.repos.updateDirectory((d) => {
+    if (d.users.some((u) => u.email.toLowerCase() === input.email))
+      throw new DomainError('conflict', 'A user with this email already exists.');
+    const u: DirectoryUser = {
+      id: crypto.randomUUID(),
+      tenantId: '',
+      email: input.email,
+      displayName: input.displayName,
+      roles: [...new Set(input.roles)],
+      status: 'active',
+      onboarding: { completedSteps: [], skippedSteps: [] },
+      identityHistory: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    d.users.push(u);
+    return structuredClone(u);
+  });
+  const link = await issueSetupLink(deps, user.id);
+  await deps.repos.appendAudit({
+    at: now,
+    actor: admin.id,
+    action: 'admin.user_created',
+    target: user.id,
+    details: { roles: user.roles },
+  });
+  return c.json({ user, setupLink: link }, 201);
+});
+
+/** New set-password link, e.g. when someone forgot their password. The old password keeps
+ * working until the link is used. */
+adminRoutes.post('/users/:uid/setup-link', async (c) => {
+  const admin = requireAdmin(c);
+  const deps = c.get('deps');
+  const uid = c.req.param('uid');
+  const user = (await deps.repos.directory()).users.find((u) => u.id === uid);
+  if (!user || user.status === 'deactivated') throw notFound('User');
+  const link = await issueSetupLink(deps, uid);
+  await deps.repos.appendAudit({
+    at: deps.clock().toISOString(),
+    actor: admin.id,
+    action: 'admin.setup_link_issued',
+    target: uid,
+  });
+  return c.json({ setupLink: link });
 });
 
 adminRoutes.put('/users/:uid', async (c) => {
@@ -215,10 +272,6 @@ adminRoutes.get('/health', async (c) => {
   } catch (err) {
     checks.storage = { ok: false, detail: String(err).slice(0, 200) };
   }
-  checks.notificationMailbox = {
-    ok: deps.mailer.configured,
-    detail: deps.mailer.configured ? 'configured' : 'not configured',
-  };
   const runs = await deps.coord.recentJobRuns(20);
   checks.recentJobs = {
     ok: runs.every((r) => r.ok),

@@ -187,17 +187,11 @@ export function recoveryText(e: ApiError): string {
       return 'You do not have permission for this. Ask your PM or an administrator if you need access.';
     case 'not_found':
       return 'It may have been moved, or you may not have access to it.';
-    case 'graph_permission_denied':
-      return 'Microsoft 365 refused the operation. An administrator needs to check the app permissions.';
-    case 'graph_not_found':
-      return 'The OneDrive file or folder is missing. Check whether it was moved or deleted.';
-    case 'graph_throttled':
-      return 'Microsoft 365 is busy. Wait a minute and retry.';
     case 'concurrent_update':
     case 'conflict':
       return 'Someone else changed this at the same time. Reload and try again.';
-    case 'consent_required':
-      return 'Connect Outlook to use this feature.';
+    case 'link_invalid':
+      return 'Ask an administrator for a new set-password link.';
     case 'rate_limited':
       return 'Too many requests. Wait a moment, then retry.';
     default:

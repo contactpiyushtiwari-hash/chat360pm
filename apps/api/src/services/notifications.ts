@@ -1,8 +1,16 @@
 import type { DirectoryUser, NotificationRecord, Project } from '@chat360/core';
 import { nameResolver, timeContext, type Deps } from '../deps';
-import type { MailMessage } from '../ports';
+import type { Mailer, MailMessage, SendOutcome } from '../ports';
 
 const MAX_ATTEMPTS = 5;
+
+/** No mail provider is wired in, so notifications are recorded honestly as "not configured". */
+export class NotConfiguredMailer implements Mailer {
+  readonly configured = false;
+  async send(): Promise<SendOutcome> {
+    return { status: 'not_configured', reason: 'Email notifications are not set up' };
+  }
+}
 const SENDING_TIMEOUT_MS = 15 * 60_000;
 
 interface Claimed {
@@ -89,7 +97,7 @@ function allNotifications(p: Project): NotificationRecord[] {
 
 /**
  * Delivers pending notifications for one project. At-most-once: each notification is marked
- * `sending` in OneDrive before the Graph call; one stuck in `sending` (e.g. the Worker died
+ * `sending` in storage before the send; one stuck in `sending` (e.g. the Worker died
  * mid-send) becomes `unknown` and is surfaced, never silently resent.
  */
 export async function deliverNotifications(deps: Deps, projectId: string) {
@@ -155,7 +163,7 @@ export async function deliverNotifications(deps: Deps, projectId: string) {
         const o = outcomes.get(n.id);
         if (!o) continue;
         if (o.ok) {
-          // "sent" means Microsoft Graph accepted the message (HTTP 202); delivery is not confirmed.
+          // "sent" means the mail provider accepted the message; delivery is not confirmed.
           n.status = 'sent';
           n.sentAt = now;
           delete n.lastError;

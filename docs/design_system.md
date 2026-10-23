@@ -47,7 +47,6 @@ Typography: system UI stack (`Segoe UI` first — native on Chat360 Windows mach
 | `ErrorState` / `InlineError`                     | Message, recovery advice by error code, error/request id, Retry / Sign in / Get help.                                                                          |
 | `ToastProvider` / `useToast`                     | Polite live region; success 4.5 s, error 8 s. Only after server confirmation.                                                                                  |
 | `KeyValue`                                       | Definition list for details.                                                                                                                                   |
-| `SyncStatus`                                     | Shows real Excel sync state, polling briefly while pending.                                                                                                    |
 | `UserSelect` / `UserMultiSelect`                 | Directory pickers filtered by role; multi-select uses checkbox pills (touch-friendly).                                                                         |
 | `HandoverView`                                   | Collapsible handover sections with counts.                                                                                                                     |
 | `TaskList` / `TaskKanban` / `TaskGantt`          | Three views of the same tasks; list is the accessible equivalent of the Gantt.                                                                                 |
@@ -57,12 +56,12 @@ Typography: system UI stack (`Segoe UI` first — native on Chat360 Windows mach
 1. **Loading:** skeleton or spinner; actions disabled while submitting (`useAction` blocks double submission).
 2. **Empty:** `EmptyState` with a relevant next action allowed by the user's permissions.
 3. **Error:** `ErrorState` with recovery text and Retry; 404 → `NotFoundPage`.
-4. **Success:** toast after the server responds; Excel outcome shown via `SyncStatus`.
-5. **Partial:** e.g. project created but workbook failed → explicit message plus retry button.
+4. **Success:** toast after the server responds.
+5. **Partial:** e.g. a transfer whose optional notification step failed → each step's outcome shown, with retry.
 
 ## Forms
 
-Validate on the server (single source of truth in `@chat360/core/schemas`); disable submit until obvious requirements are met; show field errors inline; keep user input on error; confirmations for irreversible or outward-facing actions (sending email, external invites, PM reassignment, deactivation).
+Validate on the server (single source of truth in `@chat360/core/schemas`); disable submit until obvious requirements are met; show field errors inline; keep user input on error; confirmations for irreversible or outward-facing actions (PM reassignment, deactivation).
 
 ## Accessibility
 

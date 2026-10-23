@@ -15,7 +15,6 @@ import {
 import { domainContext } from '../deps';
 import { requireUser, type AppContext } from '../http/context';
 import { deliverNotifications } from '../services/notifications';
-import { syncWorkbook } from '../services/workbook';
 
 const RANK: Record<ProjectAccessLevel, number> = {
   none: 0,
@@ -39,13 +38,11 @@ export async function loadProject(c: AppContext, id: string, min: ProjectAccessL
 
 export interface MutateOptions {
   idempotencyKey?: string | null;
-  /** Skip background Excel sync (e.g. when the caller syncs itself). */
-  skipSync?: boolean;
 }
 
 /**
  * Runs a domain mutation against the latest project document with compare-and-swap, then
- * refreshes the project index and schedules Excel sync and notification delivery in the background.
+ * refreshes the project index and schedules notification delivery in the background.
  * With an idempotency key, a repeated request returns the entity ref from the first application.
  */
 export async function mutateProject<R>(
@@ -73,7 +70,7 @@ export async function mutateProject<R>(
     if (opts.idempotencyKey) markOperationApplied(p, opts.idempotencyKey, refOf(r));
     return r;
   });
-  if (changed) await afterProjectWrite(c, data, ctx, opts);
+  if (changed) await afterProjectWrite(c, data, ctx);
   return { project: data, result: replayedRef !== null ? null : result, replayedRef, ctx };
 }
 
@@ -83,12 +80,7 @@ function refOf(r: unknown): string {
   return '';
 }
 
-export async function afterProjectWrite(
-  c: AppContext,
-  project: Project,
-  ctx: DomainContext,
-  opts: MutateOptions = {},
-) {
+export async function afterProjectWrite(c: AppContext, project: Project, ctx: DomainContext) {
   const deps = c.get('deps');
   await deps.repos.upsertIndexEntry(indexEntryOf(project, ctx.today));
   const bg = c.get('background');
@@ -96,7 +88,6 @@ export async function afterProjectWrite(
     project.escalations.some((e) => e.notifications.some((n) => n.status === 'pending')) ||
     project.transfers.some((t) => t.notifications.some((n) => n.status === 'pending'));
   if (hasPending) bg(deliverNotifications(deps, project.id));
-  if (!opts.skipSync && project.workbook.driveItemId) bg(syncWorkbook(deps, project.id));
 }
 
 /** Project for the browser: internal bookkeeping removed, plus the caller's permissions. */
@@ -122,11 +113,9 @@ export function redactFinance(project: Project, user: DirectoryUser, today: stri
 export function presentProject(project: Project, user: DirectoryUser, today: string) {
   const subject = accessSubjectOf(project);
   const access = projectAccess(user, subject, today);
-  const { appliedOperations: _a, workbook, ...rest } = redactFinance(project, user, today);
-  const { rowHashes: _h, ...wb } = workbook;
+  const { appliedOperations: _a, ...rest } = redactFinance(project, user, today);
   return {
     ...rest,
-    workbook: wb,
     summary: summarizeProject(project, today),
     access,
     permissions: {
@@ -137,12 +126,10 @@ export function presentProject(project: Project, user: DirectoryUser, today: str
       createTask: can(user, 'task.create', subject, today),
       manageApis: can(user, 'api.manage', subject, today),
       manageEscalations: can(user, 'escalation.manage', subject, today),
-      syncWorkbook: can(user, 'workbook.sync', subject, today),
-      resolveConflicts: can(user, 'workbook.resolve_conflict', subject, today),
+      downloadTracker: can(user, 'tracker.download', subject, today),
       requestTransfer: can(user, 'transfer.request', subject, today),
       reviewTransfers: can(user, 'transfer.review', subject, today),
       reassignPm: can(user, 'pm.reassign', subject, today),
-      logCommunication: can(user, 'communication.log', subject, today),
     },
   };
 }

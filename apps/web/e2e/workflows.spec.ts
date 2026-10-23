@@ -15,7 +15,41 @@ test.describe.serial('core workflows (desktop)', () => {
     await expectNoHorizontalOverflow(page);
   });
 
-  test('PM creates a project and its Excel workbook', async ({ page }) => {
+  test('signs in with email and password', async ({ page }) => {
+    await page.context().clearCookies();
+    await page.goto('/login');
+    await page.getByLabel('Work email').fill('demo-pm1@chat.io');
+    await page.getByLabel('Password').fill('wrong password');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByText('Email or password is incorrect.')).toBeVisible();
+    await page.getByLabel('Password').fill('demo-password');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  });
+
+  test('admin adds an employee who sets their own password', async ({ page }) => {
+    await signInAs(page, /Avery Admin/);
+    await nav(page, 'Admin');
+    await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Rio Recruit (demo)');
+    await page.getByLabel('Work email').fill('rio.recruit@chat.io');
+    await page.getByRole('group', { name: 'Roles' }).getByLabel('Tech Team').check();
+    await page.getByRole('button', { name: 'Add and create set-password link' }).click();
+    const link = await page.getByLabel('Set-password link').inputValue();
+    expect(link).toMatch(/\/set-password#token=/);
+    await shot(page, 'admin-add-user');
+
+    await page.context().clearCookies();
+    await page.goto(link);
+    await expect(page).toHaveURL(/\/set-password$/);
+    await page.getByLabel('New password').fill('rio picked a long password');
+    await page.getByLabel('Repeat password').fill('rio picked a long password');
+    await page.getByRole('button', { name: 'Save password and sign in' }).click();
+    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+    await page.goto('/account');
+    await expect(page.getByText('rio.recruit@chat.io')).toBeVisible();
+  });
+
+  test('PM creates a project and downloads its Excel tracker', async ({ page }) => {
     await signInAs(page, /Priya PM/);
     await page.goto('/projects/new');
     await page.getByLabel('Client name').fill('Tailspin Toys');
@@ -33,12 +67,13 @@ test.describe.serial('core workflows (desktop)', () => {
     await page.getByRole('button', { name: 'Next' }).click();
     await expect(page.getByText('Tailspin Toys — Returns Assistant')).toBeVisible();
     await shot(page, 'project-wizard-review');
-    await page.getByRole('button', { name: 'Create project and workbook' }).click();
-    await expect(
-      page.getByText('Project created and Excel tracker generated in OneDrive.'),
-    ).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Open Excel tracker' })).toBeVisible();
-    await expect(page.getByText('Excel up to date')).toBeVisible();
+    await page.getByRole('button', { name: 'Create project' }).click();
+    await expect(page.getByText(/^Project created\./)).toBeVisible();
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('link', { name: 'Download Excel tracker' }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe('Tailspin Toys - Returns Assistant - Tracker.xlsx');
     await page.getByRole('tab', { name: /Tasks/ }).click();
     await expect(
       page.getByRole('button', { name: /Commercial handover and SOW review/ }),
@@ -66,7 +101,6 @@ test.describe.serial('core workflows (desktop)', () => {
     await shot(page, 'confirm-not-completed');
     await dialog.getByRole('button', { name: 'Submit and escalate' }).click();
     await expect(page.getByText(/Escalation ESC-\d+ raised/)).toBeVisible();
-    await expect(page.getByText('Excel up to date')).toBeVisible({ timeout: 15_000 });
 
     await signInAs(page, /Priya PM/);
     await nav(page, 'Escalations');
@@ -126,7 +160,7 @@ test.describe.serial('core workflows (desktop)', () => {
     await nav(page, 'Support');
     await page.getByRole('button', { name: 'New request' }).click();
     const d = page.getByRole('dialog');
-    await d.getByLabel('Category').selectOption({ label: 'Workbook synchronisation issue' });
+    await d.getByLabel('Category').selectOption({ label: 'Bug' });
     await d.getByLabel('Subject').fill('Tracker not updating');
     await d.getByLabel('Description').fill('The This Week sheet looks stale.');
     await d.getByRole('button', { name: 'Submit' }).click();
@@ -170,23 +204,22 @@ test.describe.serial('core workflows (desktop)', () => {
     await shot(page, 'account-deactivation');
   });
 
-  test('email compose requires preview and confirmation (development: recorded, not sent)', async ({
-    page,
-  }) => {
+  test('email drafts open in the user’s own mail app', async ({ page }) => {
     await signInAs(page, /Priya PM/);
     await nav(page, 'Email');
-    await page.getByLabel('To').fill('client@fabrikam.example');
-    await page.getByLabel('Subject').fill('Pending API details');
     await page
-      .getByLabel('Message')
-      .fill('Hello, could you share the sandbox credentials process?');
-    await page.getByRole('button', { name: 'Preview' }).click();
-    await expect(page.getByText('this is exactly what will be sent')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Send email' })).toBeDisabled();
-    await page.getByLabel(/external recipient/).check();
-    await shot(page, 'email-preview');
-    await page.getByRole('button', { name: 'Send email' }).click();
-    await expect(page.getByText('Outlook accepted the email for delivery.')).toBeVisible();
+      .getByLabel('Project')
+      .selectOption({ label: 'Northwind Retail — WhatsApp Order Bot' });
+    await page
+      .getByLabel('Template')
+      .selectOption({ label: 'API / dependency follow-up (client)' });
+    await expect(page.getByLabel('Subject')).toHaveValue(/Northwind Retail/);
+    await page.getByLabel('To').fill('client@fabrikam.example');
+    await shot(page, 'email-draft');
+    await expect(page.getByRole('link', { name: 'Open in my email app' })).toHaveAttribute(
+      'href',
+      /^mailto:client@fabrikam\.example\?subject=Northwind%20Retail/,
+    );
   });
 
   test('Sales POC updates project finance; technical staff do not see it', async ({ page }) => {

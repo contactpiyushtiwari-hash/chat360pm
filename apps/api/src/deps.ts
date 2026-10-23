@@ -1,28 +1,15 @@
 import { todayIn, type DirectoryUser, type DomainContext, type OrgConfig } from '@chat360/core';
-import type { OidcClient } from './auth/oidc';
 import type { AppConfig } from './env';
-import type {
-  AnalyticsSink,
-  Coordination,
-  Logger,
-  Mailer,
-  SessionStore,
-  UserGraph,
-  WorkbookGateway,
-} from './ports';
+import type { AnalyticsSink, Coordination, Logger, Mailer, SessionStore } from './ports';
 import type { Repos } from './store/repos';
 
 /** Everything the app needs, assembled once per isolate (Worker) or process (dev server/tests). */
 export interface Deps {
   config: AppConfig;
   repos: Repos;
-  workbooks: WorkbookGateway;
   sessions: SessionStore;
   coord: Coordination;
   mailer: Mailer;
-  /** Delegated Graph for a user's access token. */
-  userGraphFor: (accessToken: string) => UserGraph;
-  oidc: OidcClient | null;
   analytics: AnalyticsSink;
   log: Logger;
   clock: () => Date;
@@ -59,7 +46,7 @@ export function nameResolver(users: DirectoryUser[]) {
   return (id: string | null) => (id ? (map.get(id) ?? 'Unknown user') : '');
 }
 
-/** Runs promises with bounded concurrency (Graph throttles bursts). */
+/** Runs promises with bounded concurrency so one job cannot flood storage. */
 export async function mapLimit<T, R>(
   items: T[],
   limit: number,

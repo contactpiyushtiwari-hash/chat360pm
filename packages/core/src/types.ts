@@ -296,7 +296,7 @@ export const TRANSFER_STATUSES = [
 ] as const;
 export type TransferStatus = (typeof TRANSFER_STATUSES)[number];
 
-export type TransferStepName = 'assign_pm' | 'update_index' | 'sync_workbook' | 'notify';
+export type TransferStepName = 'assign_pm' | 'update_index' | 'notify';
 export type TransferStepStatus = 'pending' | 'done' | 'failed' | 'skipped';
 
 export interface TransferStep {
@@ -385,46 +385,6 @@ export interface TransferRequest {
 export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'cancelled';
 export type ProjectHealth = 'green' | 'amber' | 'red';
 
-export type SyncState = 'not_created' | 'pending' | 'syncing' | 'synced' | 'failed' | 'conflict';
-
-export interface SyncConflict {
-  key: string;
-  table: string;
-  rowKey: string;
-  detectedAt: IsoInstant;
-  excelValues: Record<string, unknown>;
-  appValues: Record<string, unknown>;
-}
-
-export interface WorkbookState {
-  driveItemId: string | null;
-  webUrl: string | null;
-  fileName: string;
-  state: SyncState;
-  /** Project revision last written to Excel. */
-  syncedRevision: number;
-  lastSyncedAt: IsoInstant | null;
-  lastAttemptAt: IsoInstant | null;
-  lastError: string | null;
-  attempts: number;
-  /** Hash of the managed values the app last wrote for each row (`table:rowKey`). */
-  rowHashes: Record<string, string>;
-  conflicts: SyncConflict[];
-}
-
-export interface CommunicationRef {
-  id: string;
-  kind: 'email' | 'meeting';
-  at: IsoInstant;
-  by: UserId;
-  subject: string;
-  /** Recipient addresses (no body is retained). */
-  recipients: string[];
-  status: 'sent' | 'failed' | 'created' | 'updated' | 'cancelled';
-  externalId?: string;
-  error?: string;
-}
-
 export interface AuditEntry {
   id: string;
   at: IsoInstant;
@@ -467,8 +427,6 @@ export interface Project {
   documents: ProjectDocument[];
   /** Commercial position for billing. Absent on documents created before finance tracking. */
   finance?: ProjectFinance;
-  communications: CommunicationRef[];
-  workbook: WorkbookState;
   audit: AuditEntry[];
   /** Idempotency keys already applied to this document, bounded FIFO. */
   appliedOperations: string[];
@@ -502,8 +460,6 @@ export interface ProjectIndexEntry {
   formerPms: FormerPmAccess[];
   deliveryHeadId: UserId | null;
   folderPath: string;
-  workbookUrl: string | null;
-  workbookState: SyncState;
   startDate: IsoDate;
   targetGoLive: IsoDate;
   summary: ProjectSummary;
@@ -588,7 +544,6 @@ export interface OrgConfig {
 export const SUPPORT_CATEGORIES = [
   'bug',
   'integration_failure',
-  'workbook_sync',
   'missing_permission',
   'incorrect_assignment',
   'transfer_issue',
@@ -600,7 +555,6 @@ export type SupportCategory = (typeof SUPPORT_CATEGORIES)[number];
 export const SUPPORT_CATEGORY_LABELS: Record<SupportCategory, string> = {
   bug: 'Bug',
   integration_failure: 'Failed integration',
-  workbook_sync: 'Workbook synchronisation issue',
   missing_permission: 'Missing permission',
   incorrect_assignment: 'Incorrect project assignment',
   transfer_issue: 'Transfer issue',

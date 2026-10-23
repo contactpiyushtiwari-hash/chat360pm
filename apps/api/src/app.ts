@@ -5,8 +5,8 @@ import { csrfGuard, errorHandler, loadSession, requestContext } from './http/mid
 import { accountRoutes } from './routes/account';
 import { adminRoutes } from './routes/admin';
 import { authRoutes, registerDevAuth } from './routes/auth';
+import { emailRoutes } from './routes/email';
 import { meRoutes } from './routes/me';
-import { outlookRoutes } from './routes/outlook';
 import { portfolioRoutes } from './routes/portfolio';
 import { projectRoutes } from './routes/projects';
 import { supportRoutes } from './routes/support';
@@ -34,7 +34,7 @@ export function createApp(deps: Deps) {
   app.route('/api/support', supportRoutes);
   app.route('/api/account', accountRoutes);
   app.route('/api/admin', adminRoutes);
-  app.route('/api', outlookRoutes);
+  app.route('/api/email', emailRoutes);
 
   app.notFound((c) =>
     c.json(

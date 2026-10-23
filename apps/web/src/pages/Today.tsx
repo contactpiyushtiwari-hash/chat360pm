@@ -22,7 +22,6 @@ import {
   TextArea,
   useToast,
 } from '../components/ui';
-import { SyncStatus } from '../components/SyncStatus';
 
 interface TodayData {
   today: string;
@@ -47,14 +46,8 @@ export function TodayPage() {
         subtitle="Every task due today needs an explicit decision: Completed or Not completed. Unanswered tasks are escalated at the end of the day."
       />
       {lastSynced && (
-        <div className="notice">
-          Saved. Excel tracker:{' '}
-          <SyncStatus
-            key={lastSynced.key}
-            projectId={lastSynced.projectId}
-            initial={{ state: 'pending', lastSyncedAt: null, lastError: null, webUrl: null }}
-            poll
-          />
+        <div className="notice" role="status">
+          Saved.
         </div>
       )}
       {r.loading ? (

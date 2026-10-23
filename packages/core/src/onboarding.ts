@@ -17,7 +17,7 @@ const COMMON: OnboardingStep[] = [
     id: 'welcome',
     title: 'What this platform does',
     description:
-      'Projects, tasks, daily confirmations, escalations and transfers live here. Each project keeps its official Excel tracker in the approved OneDrive library, kept in sync automatically.',
+      'Projects, tasks, daily confirmations, escalations and transfers live here. Each project tracker can be downloaded as an Excel file at any time.',
     required: true,
     verifiedBySystem: false,
   },
@@ -29,24 +29,6 @@ const COMMON: OnboardingStep[] = [
     required: true,
     verifiedBySystem: true,
   },
-  {
-    id: 'workbook_access',
-    title: 'Open a project workbook',
-    description:
-      'Workbooks open in Excel for the web with your own Microsoft 365 account. If a link says access denied, ask IT to add you to the project operations library.',
-    required: false,
-    verifiedBySystem: false,
-    route: '/projects',
-  },
-  {
-    id: 'outlook_consent',
-    title: 'Connect Outlook mail and calendar (optional)',
-    description:
-      'Sending project emails and seeing meetings needs your consent for Mail.Send and Calendars.ReadWrite. You can grant it later from the Calendar or Email pages.',
-    required: false,
-    verifiedBySystem: true,
-    route: '/calendar',
-  },
 ];
 
 const BY_ROLE: Partial<Record<GlobalRole, OnboardingStep[]>> = {
@@ -55,7 +37,7 @@ const BY_ROLE: Partial<Record<GlobalRole, OnboardingStep[]>> = {
       id: 'pm_create_project',
       title: 'Create a project',
       description:
-        'The wizard generates the Excel tracker (six delivery sheets plus Finance) in OneDrive.',
+        'The wizard sets up the project plan from a template; its Excel tracker can be downloaded any time.',
       required: false,
       verifiedBySystem: false,
       route: '/projects/new',
@@ -177,14 +159,8 @@ export interface OnboardingStatus {
   missingRequired: string[];
 }
 
-export function onboardingStatus(
-  user: DirectoryUser,
-  verified: { outlookConsent: boolean },
-): OnboardingStatus {
-  const systemDone: Record<string, boolean> = {
-    role_assigned: user.roles.length > 0,
-    outlook_consent: verified.outlookConsent,
-  };
+export function onboardingStatus(user: DirectoryUser): OnboardingStatus {
+  const systemDone: Record<string, boolean> = { role_assigned: user.roles.length > 0 };
   const steps = onboardingStepsFor(user).map((s) => {
     const done = s.verifiedBySystem
       ? !!systemDone[s.id]
@@ -205,7 +181,6 @@ export function applyOnboardingUpdate(
   complete: string[],
   skip: string[],
   now: string,
-  verified: { outlookConsent: boolean },
 ) {
   const steps = onboardingStepsFor(user);
   const byId = new Map(steps.map((s) => [s.id, s]));
@@ -220,7 +195,7 @@ export function applyOnboardingUpdate(
     if (s && !s.required && !user.onboarding.skippedSteps.includes(id))
       user.onboarding.skippedSteps.push(id);
   }
-  const status = onboardingStatus(user, verified);
+  const status = onboardingStatus(user);
   if (status.complete) user.onboarding.completedAt ??= now;
   else delete user.onboarding.completedAt;
   return status;

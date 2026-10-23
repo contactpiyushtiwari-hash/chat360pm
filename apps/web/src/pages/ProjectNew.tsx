@@ -61,10 +61,7 @@ export function ProjectNewPage() {
   });
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   const create = useAction(async () => {
-    const res = await post<{
-      project: { id: string };
-      workbook?: { status: string; error?: string };
-    }>(
+    const res = await post<{ project: { id: string } }>(
       '/api/projects',
       {
         ...f,
@@ -74,9 +71,7 @@ export function ProjectNewPage() {
       },
       key,
     );
-    nav(
-      `/projects/${res.project.id}?created=1${res.workbook?.status === 'failed' ? '&workbook=failed' : ''}`,
-    );
+    nav(`/projects/${res.project.id}?created=1`);
   });
   const errs = create.error?.fields ?? {};
 
@@ -96,7 +91,7 @@ export function ProjectNewPage() {
     <div className="narrow">
       <PageHeader
         title="New project"
-        subtitle="The wizard creates the project and its Excel tracker in the approved OneDrive location."
+        subtitle="The wizard creates the project and its task plan from a template."
       />
       <ol className="stepper" aria-label="Progress">
         {STEPS.map((s, i) => (
@@ -291,25 +286,23 @@ export function ProjectNewPage() {
                   </label>
                 ))}
               </fieldset>
-              <Field
-                label="Approved OneDrive destination"
-                required
-                hint="Only locations approved by an administrator are listed."
-              >
-                {(p) => (
-                  <Select
-                    {...p}
-                    value={f.destinationId}
-                    onChange={(e) => set('destinationId', e.target.value)}
-                  >
-                    {m.destinations.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.label}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
+              {m.destinations.length > 1 && (
+                <Field label="Project group" required hint="Groups are set up by an administrator.">
+                  {(p) => (
+                    <Select
+                      {...p}
+                      value={f.destinationId}
+                      onChange={(e) => set('destinationId', e.target.value)}
+                    >
+                      {m.destinations.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+              )}
             </>
           )}
           {step === 4 && (
@@ -327,16 +320,12 @@ export function ProjectNewPage() {
                     'Template',
                     m.templates.find((t) => t.id === f.templateId)?.label ?? f.templateId,
                   ],
-                  [
-                    'Destination',
-                    m.destinations.find((d) => d.id === f.destinationId)?.label ?? f.destinationId,
-                  ],
                 ]}
               />
               <p className="hint">
-                On create, the tracker (Gantt, WBS, API List Pending, Escalation Matrix, Last Week
-                Task, This Week Task) is generated and saved. If that fails, the project is still
-                created and you can retry the workbook.
+                After creating, you can download the Excel tracker (Gantt, WBS, API List Pending,
+                Escalation Matrix, Last Week Task, This Week Task, Finance) from the project page at
+                any time. It always reflects the current project.
               </p>
             </>
           )}
@@ -360,7 +349,7 @@ export function ProjectNewPage() {
               disabled={!stepValid[step]}
               loading={create.pending}
             >
-              {step < STEPS.length - 1 ? 'Next' : 'Create project and workbook'}
+              {step < STEPS.length - 1 ? 'Next' : 'Create project'}
             </Button>
           </div>
         </form>

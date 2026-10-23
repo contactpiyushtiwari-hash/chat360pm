@@ -12,15 +12,26 @@ import {
   type ProjectIndexEntry,
   type SupportLog,
 } from '@chat360/core';
+import type { PasswordHash } from '../auth/crypto';
 import { PreconditionFailedError, type DocStore, type StoredDoc } from '../ports';
 
-/** OneDrive layout under the configured root (docs/infrastructure.md §Data layout). */
+/** Password hashes and pending set-password links. Kept apart from the directory, which is
+ * read on every request and listed to admins. */
+export interface Credentials {
+  schemaVersion: 1;
+  passwords: Record<string, PasswordHash & { updatedAt: string }>;
+  /** Keyed by SHA-256 of the link token; the raw token is shown once and never stored. */
+  setupLinks: Record<string, { userId: string; expiresAt: number }>;
+}
+
+/** Document paths (docs/infrastructure.md §Data layout). */
 export const PATHS = {
   directory: '_system/directory.json',
   config: '_system/config.json',
   index: '_system/projects-index.json',
   support: '_system/support.json',
   accounts: '_system/account-requests.json',
+  credentials: '_system/credentials.json',
   audit: (month: string) => `_system/audit/${month}.json`,
   project: (folderPath: string) => `${folderPath}/project.json`,
 };
@@ -201,6 +212,13 @@ export class Repos {
     );
   }
 
+  async credentials(): Promise<Credentials> {
+    return (await this.store.getJson<Credentials>(PATHS.credentials))?.data ?? emptyCredentials();
+  }
+  updateCredentials<R>(mutate: (c: Credentials) => R) {
+    return this.update<Credentials, R>(PATHS.credentials, emptyCredentials, mutate);
+  }
+
   /** Organisation-level audit trail (admin actions, logins of new users, deactivations). */
   async appendAudit(entry: Omit<AuditEntry, 'id'>) {
     const month = entry.at.slice(0, 7);
@@ -222,3 +240,5 @@ export class Repos {
     );
   }
 }
+
+const emptyCredentials = (): Credentials => ({ schemaVersion: 1, passwords: {}, setupLinks: {} });

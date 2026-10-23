@@ -1,22 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { createOidcClient } from '../src/auth/oidc';
-import { checkEmployeePolicy, safeReturnTo } from '../src/routes/auth';
+import { createApp } from '../src/app';
+import { hashPassword, verifyPassword } from '../src/auth/crypto';
 import { loadConfig } from '../src/env';
-import { DEV_KEY } from '../dev/memory-deps';
-import { setup } from './helpers';
+import { DEMO_PASSWORD } from '../dev/seed';
+import { memoryDeps } from '../dev/memory-deps';
+import { readJson, setup, type Client } from './helpers';
 
 describe('configuration fails closed', () => {
-  const base = {
-    TOKEN_ENCRYPTION_KEY: DEV_KEY,
-    COOKIE_SECRET: DEV_KEY,
-    APP_ORIGIN: 'https://ops.example.test',
-    ENTRA_TENANT_ID: 't',
-    ENTRA_CLIENT_ID: 'c',
-    ENTRA_CLIENT_SECRET: 's',
-    GRAPH_DRIVE_ID: 'd',
-    ONEDRIVE_ROOT_PATH: 'Root',
-  };
+  const base = { APP_ORIGIN: 'https://ops.example.test', SETUP_CODE: 'a-long-setup-code' };
   it('rejects developer sign-in, memory storage and plain http outside development', () => {
     expect(() => loadConfig({ ...base, ENVIRONMENT: 'production', DEV_AUTH: 'enabled' })).toThrow(
       /DEV_AUTH/,
@@ -28,15 +19,16 @@ describe('configuration fails closed', () => {
       loadConfig({ ...base, ENVIRONMENT: 'production', APP_ORIGIN: 'http://x' }),
     ).toThrow(/https/);
   });
-  it('requires 32-byte secrets', () => {
-    expect(() =>
-      loadConfig({ ...base, ENVIRONMENT: 'production', COOKIE_SECRET: 'short' }),
-    ).toThrow(/COOKIE_SECRET/);
+  it('rejects a short setup code', () => {
+    expect(() => loadConfig({ ...base, ENVIRONMENT: 'production', SETUP_CODE: 'short' })).toThrow(
+      /SETUP_CODE/,
+    );
   });
   it('accepts a complete production config with __Host- cookies', () => {
     const c = loadConfig({ ...base, ENVIRONMENT: 'production' });
     expect(c.sessionCookieName).toBe('__Host-c360_session');
     expect(c.devAuth).toBe(false);
+    expect(c.storageBackend).toBe('d1');
   });
 });
 
@@ -120,106 +112,167 @@ describe('sessions and request protection', () => {
   });
 });
 
-describe('employee policy', () => {
-  const member = {
-    id: 'o1',
-    displayName: 'A',
-    mail: 'a@chat.io',
-    userPrincipalName: 'a@chat.io',
-    userType: 'Member',
-    accountEnabled: true,
-  };
-  it('accepts members of the allowed domain and refuses guests, disabled and foreign accounts', () => {
-    expect(checkEmployeePolicy(member, ['chat.io'])).toBe('a@chat.io');
-    expect(() => checkEmployeePolicy({ ...member, userType: 'Guest' }, ['chat.io'])).toThrow(
-      /Guest/,
-    );
-    expect(() =>
-      checkEmployeePolicy(
-        { ...member, userPrincipalName: 'x_gmail.com#EXT#@chat.io', mail: null },
-        ['chat.io'],
-      ),
-    ).toThrow(/Guest/);
-    expect(() => checkEmployeePolicy({ ...member, accountEnabled: false }, ['chat.io'])).toThrow(
-      /disabled/,
-    );
-    expect(() => checkEmployeePolicy({ ...member, mail: 'a@other.com' }, ['chat.io'])).toThrow(
-      /not a Chat360/,
-    );
+describe('password sign-in', () => {
+  const login = (c: Client, email: string, password: string) =>
+    c.post('/api/auth/login', { email, password });
+
+  it('signs in with the right password and gives one generic error otherwise', async () => {
+    const t = await setup();
+    const c = t.client();
+    expect((await login(c, 'Demo-PM1@chat.io', DEMO_PASSWORD)).status).toBe(200);
+    expect((await c.get('/api/me')).status).toBe(200);
+    const wrong = await login(t.client(), 'demo-pm1@chat.io', 'not-the-password');
+    const unknown = await login(t.client(), 'nobody@chat.io', DEMO_PASSWORD);
+    expect(wrong.status).toBe(401);
+    expect(unknown.status).toBe(401);
+    expect((await readJson(wrong)).error.message).toBe((await readJson(unknown)).error.message);
   });
-  it('blocks open redirects', () => {
-    expect(safeReturnTo('//evil.com')).toBe('/');
-    expect(safeReturnTo('/\\evil.com')).toBe('/');
-    expect(safeReturnTo('https://evil.com')).toBe('/');
-    expect(safeReturnTo('/projects/PRJ-1')).toBe('/projects/PRJ-1');
+
+  it('stores only salted hashes, never the password', async () => {
+    const t = await setup();
+    const raw = JSON.stringify([...t.deps.store.files.values()].map((f) => f.json));
+    expect(raw).not.toContain(DEMO_PASSWORD);
+    const [a, b] = await Promise.all([hashPassword('same', 1000), hashPassword('same', 1000)]);
+    expect(a.salt).not.toBe(b.salt);
+    expect(a.hash).not.toBe(b.hash);
+    expect(await verifyPassword('same', a)).toBe(true);
+    expect(await verifyPassword('Same', a)).toBe(false);
+  });
+
+  it('refuses deactivated accounts and rate-limits guessing', async () => {
+    const t = await setup();
+    const admin = await t.as('demo-admin');
+    await admin.put('/api/admin/users/demo-tech2', { status: 'deactivated' });
+    expect((await login(t.client(), 'demo-tech2@chat.io', DEMO_PASSWORD)).status).toBe(403);
+    const c = t.client();
+    const codes: number[] = [];
+    for (let i = 0; i < 11; i++)
+      codes.push((await login(c, 'demo-csm@chat.io', `guess-${i}`)).status);
+    expect(codes.at(-1)).toBe(429);
+  });
+
+  it('admin adds an employee who sets a password through a one-time link', async () => {
+    const t = await setup();
+    const admin = await t.as('demo-admin');
+    const created = await admin.post('/api/admin/users', {
+      email: 'New.Person@chat.io',
+      displayName: 'New Person (demo)',
+      roles: ['tech'],
+    });
+    expect(created.status).toBe(201);
+    const { user, setupLink } = await readJson(created);
+    expect(user).toMatchObject({ email: 'new.person@chat.io', roles: ['tech'] });
+    expect(setupLink.url).toMatch(/^http:\/\/localhost:5173\/set-password#token=/);
+    const token = setupLink.url.split('#token=')[1];
+    expect(JSON.stringify(await t.deps.repos.credentials())).not.toContain(token);
+
+    const c = t.client();
+    expect((await c.post('/api/auth/set-password', { token, password: 'short' })).status).toBe(422);
+    expect(
+      (await c.post('/api/auth/set-password', { token, password: 'a good long password' })).status,
+    ).toBe(200);
+    expect((await c.json(c.get('/api/me'))).user.email).toBe('new.person@chat.io');
+    const reuse = await t.client().post('/api/auth/set-password', {
+      token,
+      password: 'another long password',
+    });
+    expect(reuse.status).toBe(400);
+    expect((await login(t.client(), 'new.person@chat.io', 'a good long password')).status).toBe(
+      200,
+    );
+    expect(
+      (await admin.post('/api/admin/users', { email: 'new.person@chat.io', displayName: 'Dup' }))
+        .status,
+    ).toBe(409);
+    const pm = await t.as('demo-pm1');
+    expect(
+      (await pm.post('/api/admin/users', { email: 'x@chat.io', displayName: 'X' })).status,
+    ).toBe(403);
+  });
+
+  it('set-password links expire', async () => {
+    const t = await setup();
+    let now = Date.now();
+    t.deps.clock = () => new Date(now);
+    const admin = await t.as('demo-admin');
+    const { setupLink } = await admin.json(admin.post('/api/admin/users/demo-csm/setup-link'));
+    now += 8 * 24 * 3600_000;
+    const res = await t.client().post('/api/auth/set-password', {
+      token: setupLink.url.split('#token=')[1],
+      password: 'a good long password',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('changing a password needs the current one and signs out other sessions', async () => {
+    const t = await setup();
+    const a = t.client();
+    const b = t.client();
+    await login(a, 'demo-csm@chat.io', DEMO_PASSWORD);
+    await login(b, 'demo-csm@chat.io', DEMO_PASSWORD);
+    expect(
+      (
+        await a.post('/api/account/password', {
+          currentPassword: 'wrong',
+          newPassword: 'x'.repeat(12),
+        })
+      ).status,
+    ).toBe(401);
+    expect(
+      (
+        await a.post('/api/account/password', {
+          currentPassword: DEMO_PASSWORD,
+          newPassword: 'brand new password',
+        })
+      ).status,
+    ).toBe(200);
+    expect((await a.get('/api/me')).status).toBe(200);
+    expect((await b.get('/api/me')).status).toBe(401);
+    expect((await login(t.client(), 'demo-csm@chat.io', DEMO_PASSWORD)).status).toBe(401);
   });
 });
 
-describe('OIDC ID token validation', () => {
-  async function signer() {
-    const { publicKey, privateKey } = await generateKeyPair('RS256');
-    const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256' };
-    const client = createOidcClient({
-      tenantId: 'tenant-1',
-      clientId: 'client-1',
-      clientSecret: 's',
-      redirectUri: 'https://x/cb',
-      jwks: createLocalJWKSet({ keys: [jwk] }),
-    });
-    const sign = (
-      claims: Record<string, unknown>,
-      iss = 'https://login.microsoftonline.com/tenant-1/v2.0',
-      aud = 'client-1',
-    ) =>
-      new SignJWT(claims)
-        .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
-        .setIssuer(iss)
-        .setAudience(aud)
-        .setIssuedAt()
-        .setExpirationTime('10m')
-        .sign(privateKey);
-    return { client, sign };
+describe('first administrator setup', () => {
+  async function fresh() {
+    const deps = memoryDeps();
+    const app = createApp(deps);
+    const post = (path: string, body: unknown) =>
+      app.request(path, {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'chat360' },
+      });
+    const config = async () => (await (await app.request('/api/auth/config')).json()) as never;
+    return { deps, post, config };
   }
-  it('accepts a valid token and rejects wrong tenant, audience, issuer or nonce', async () => {
-    const { client, sign } = await signer();
-    const good = await sign({ oid: 'u1', tid: 'tenant-1', nonce: 'n' });
-    expect((await client.verifyIdToken(good, 'n')).oid).toBe('u1');
-    await expect(client.verifyIdToken(good, 'other')).rejects.toThrow(/did not match/);
-    await expect(
-      client.verifyIdToken(await sign({ oid: 'u1', tid: 'tenant-2', nonce: 'n' }), 'n'),
-    ).rejects.toThrow(/not from the Chat360 tenant/);
-    await expect(
-      client.verifyIdToken(
-        await sign({ oid: 'u1', tid: 'tenant-1', nonce: 'n' }, undefined, 'other-app'),
-        'n',
-      ),
-    ).rejects.toThrow(/could not be verified/);
-    await expect(
-      client.verifyIdToken(
-        await sign({ oid: 'u1', tid: 'tenant-1', nonce: 'n' }, 'https://evil/v2.0'),
-        'n',
-      ),
-    ).rejects.toThrow(/could not be verified/);
+  const admin = {
+    email: 'owner@chat.io',
+    displayName: 'Owner (demo)',
+    password: 'a good long password',
+  };
+
+  it('needs the setup code and works only until an admin can sign in', async () => {
+    const f = await fresh();
+    expect(await f.config()).toMatchObject({ setupAvailable: true });
+    expect((await f.post('/api/auth/setup', { ...admin, setupCode: 'wrong' })).status).toBe(403);
+    const ok = await f.post('/api/auth/setup', { ...admin, setupCode: 'dev-setup-code' });
+    expect(ok.status).toBe(201);
+    expect(ok.headers.get('set-cookie')).toMatch(/c360_session=/);
+    const d = await f.deps.repos.directory();
+    expect(d.users[0]).toMatchObject({ email: 'owner@chat.io', roles: ['admin'] });
+    expect(await f.config()).toMatchObject({ setupAvailable: false });
+    const again = await f.post('/api/auth/setup', {
+      ...admin,
+      email: 'attacker@chat.io',
+      setupCode: 'dev-setup-code',
+    });
+    expect(again.status).toBe(403);
   });
 
-  it('builds a PKCE authorize URL with minimal scopes', () => {
-    const client = createOidcClient({
-      tenantId: 't',
-      clientId: 'c',
-      clientSecret: 's',
-      redirectUri: 'https://app/api/auth/callback',
-      jwks: createLocalJWKSet({ keys: [] }),
+  it('is unavailable when no setup code is configured', async () => {
+    const t = await setup({ env: { SETUP_CODE: '' } });
+    expect(await t.client().json(t.client().get('/api/auth/config'))).toMatchObject({
+      setupAvailable: false,
     });
-    const url = new URL(
-      client.authorizeUrl({
-        state: 's',
-        nonce: 'n',
-        codeChallenge: 'cc',
-        scopes: ['openid', 'User.Read'],
-      }),
-    );
-    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
-    expect(url.searchParams.get('scope')).toBe('openid User.Read');
-    expect(url.pathname).toBe('/t/oauth2/v2.0/authorize');
   });
 });

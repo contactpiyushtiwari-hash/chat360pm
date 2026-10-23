@@ -53,11 +53,8 @@ export function markOperationApplied(project: Project, key: string, ref = ''): v
   }
 }
 
-/** Bumps revision/updatedAt after any mutation so Excel sync knows it is behind. */
+/** Bumps revision/updatedAt after any mutation. */
 export function touch(project: Project, now: IsoInstant): void {
   project.revision += 1;
   project.updatedAt = now;
-  if (project.workbook.state !== 'not_created' && project.workbook.state !== 'conflict') {
-    project.workbook.state = 'pending';
-  }
 }

@@ -127,9 +127,8 @@ describe('account deactivation', () => {
     );
     expect(approved.request.status).toBe('completed');
     expect((await pm.get('/api/me')).status).toBe(401);
-    // Project data and workbook are untouched by deactivation.
+    // Project data is untouched by deactivation.
     const p = await doc(t, t.projects[1]!);
-    expect(p.workbook.driveItemId).toBeTruthy();
     expect(p.teamHistory.some((h) => h.from.includes('demo-pm2'))).toBe(true);
   });
 
@@ -149,63 +148,8 @@ describe('account deactivation', () => {
   });
 });
 
-describe('Outlook email', () => {
-  const draft = (to: string[]) => ({
-    projectId: null,
-    templateId: null,
-    to,
-    cc: [],
-    subject: 'Status',
-    body: 'Hello',
-    includeWorkbookLink: false,
-  });
-
-  it('sends exactly what was previewed, once', async () => {
-    const t = await setup();
-    const u = await t.as('demo-pm1');
-    const pv = await u.json(u.post('/api/email/preview', draft(['demo-csm@chat.io'])));
-    expect(pv.requiresExternalConfirmation).toBe(false);
-    const sent = await u.post('/api/email/send', {
-      ...draft(['demo-csm@chat.io']),
-      previewToken: pv.previewToken,
-    });
-    expect(sent.status).toBe(200);
-    expect(t.deps.userGraph.sent).toHaveLength(1);
-    const again = await u.post('/api/email/send', {
-      ...draft(['demo-csm@chat.io']),
-      previewToken: pv.previewToken,
-    });
-    expect(again.status).toBe(422);
-    expect(t.deps.userGraph.sent).toHaveLength(1);
-  });
-
-  it('rejects content changed after preview and requires confirmation for external recipients', async () => {
-    const t = await setup();
-    const u = await t.as('demo-pm1');
-    const pv = await u.json(u.post('/api/email/preview', draft(['client@fabrikam.example'])));
-    expect(pv.externalRecipients).toEqual(['client@fabrikam.example']);
-    const tampered = await u.post('/api/email/send', {
-      ...draft(['client@fabrikam.example']),
-      body: 'Different',
-      previewToken: pv.previewToken,
-      confirmExternal: true,
-    });
-    expect(tampered.status).toBe(422);
-    const unconfirmed = await u.post('/api/email/send', {
-      ...draft(['client@fabrikam.example']),
-      previewToken: pv.previewToken,
-    });
-    expect(unconfirmed.status).toBe(422);
-    expect(t.deps.userGraph.sent).toHaveLength(0);
-    const ok = await u.post('/api/email/send', {
-      ...draft(['client@fabrikam.example']),
-      previewToken: pv.previewToken,
-      confirmExternal: true,
-    });
-    expect(ok.status).toBe(200);
-  });
-
-  it('records project-linked sends (without the body) and reports failures', async () => {
+describe('email drafts', () => {
+  it('fills templates from projects the caller can see, and hides others', async () => {
     const t = await setup();
     const id = t.projects[0]!;
     const u = await t.as('demo-pm1');
@@ -213,42 +157,8 @@ describe('Outlook email', () => {
     expect(tpl.templates.find((x: { id: string }) => x.id === 'api_followup').body).toContain(
       'Order status API',
     );
-    t.deps.userGraph.fail = true;
-    const d = { ...draft(['demo-csm@chat.io']), projectId: id };
-    const pv = await u.json(u.post('/api/email/preview', d));
-    const res = await u.post('/api/email/send', { ...d, previewToken: pv.previewToken });
-    expect(res.status).toBe(502);
-    const comm = (await doc(t, id)).communications.at(-1)!;
-    expect(comm).toMatchObject({ kind: 'email', status: 'failed', subject: 'Status' });
-    expect(JSON.stringify(comm)).not.toContain('Hello');
-  });
-});
-
-describe('Outlook calendar', () => {
-  it('creates meetings, requires confirmation for external attendees, and lists events', async () => {
-    const t = await setup();
-    const u = await t.as('demo-pm1');
-    const base = {
-      projectId: t.projects[0],
-      subject: 'UAT review',
-      start: `${today()}T15:00`,
-      end: `${today()}T15:30`,
-      timeZone: 'Asia/Kolkata',
-      agenda: 'Walk through UAT',
-      location: '',
-      online: true,
-    };
-    expect(
-      (await u.post('/api/calendar/events', { ...base, attendees: ['x@client.example'] })).status,
-    ).toBe(422);
-    const ok = await u.post('/api/calendar/events', { ...base, attendees: ['demo-csm@chat.io'] });
-    expect(ok.status).toBe(201);
-    const list = await u.json(u.get('/api/calendar/events?range=today'));
-    expect(list.events.map((e: { subject: string }) => e.subject)).toContain('UAT review');
-    expect((await doc(t, t.projects[0]!)).communications.at(-1)).toMatchObject({
-      kind: 'meeting',
-      status: 'created',
-    });
+    const outsider = await t.as('demo-new');
+    expect((await outsider.get(`/api/email/templates?projectId=${id}`)).status).toBe(404);
   });
 });
 
@@ -257,7 +167,7 @@ describe('support', () => {
     const t = await setup();
     const u = await t.as('demo-tech1');
     const created = await u.post('/api/support', {
-      category: 'workbook_sync',
+      category: 'bug',
       subject: 'Sync failed',
       description: 'Tracker shows failed',
       projectId: t.projects[0],

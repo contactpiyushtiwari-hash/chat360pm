@@ -10,10 +10,9 @@ import {
 } from '@chat360/core';
 import { domainContext, type Deps } from '../deps';
 import { deliverNotifications } from './notifications';
-import { syncWorkbook } from './workbook';
 
 /**
- * Executes an approved transfer. OneDrive offers no multi-document transaction, so every step
+ * Executes an approved transfer. Storage offers no multi-document transaction, so every step
  * is recorded on the transfer before moving on, every step is idempotent, and the transfer is
  * reported completed only after the required steps succeed (ADR-007). Safe to re-run.
  */
@@ -55,8 +54,7 @@ export async function executeTransfer(
   if (indexOk)
     await deps.repos.upsertIndexEntry(indexEntryOf(project, ctx.today)).catch(() => undefined);
 
-  // Optional, tracked steps: Excel and notifications. Their failure does not undo the transfer.
-  const sync = await syncWorkbook(deps, projectId);
+  // Optional, tracked step: notifications. Its failure does not undo the transfer.
   const notify = await deliverNotifications(deps, projectId).catch((err) => ({
     sent: 0,
     failed: 1,
@@ -66,20 +64,9 @@ export async function executeTransfer(
     recordStepOutcome(
       p,
       transferId,
-      'sync_workbook',
-      sync.status === 'synced' || sync.status === 'up_to_date'
-        ? { ok: true }
-        : sync.status === 'not_created'
-          ? { skipped: 'No workbook exists for this project' }
-          : { ok: false, error: sync.status === 'failed' ? sync.error : `Workbook ${sync.status}` },
-      ctx.now,
-    );
-    recordStepOutcome(
-      p,
-      transferId,
       'notify',
       !deps.mailer.configured
-        ? { skipped: 'Notification mailbox not configured' }
+        ? { skipped: 'Email notifications are not set up' }
         : notify.failed
           ? { ok: false, error: `${notify.failed} notification(s) failed` }
           : { ok: true },

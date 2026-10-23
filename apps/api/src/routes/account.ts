@@ -1,15 +1,43 @@
 import {
   activePmProjects,
   cancelDeactivation,
+  changePasswordSchema,
   deactivationRequestSchema,
   hasGlobalRole,
   requestDeactivation,
 } from '@chat360/core';
 import { Hono } from 'hono';
+import { hashPassword, verifyPassword } from '../auth/crypto';
 import { body, limit, requireUser, type AppEnv } from '../http/context';
-import { requireRecentAuth } from './auth';
+import { AuthError } from '../http/errors';
+import { requireRecentAuth, startSession } from './auth';
 
 export const accountRoutes = new Hono<AppEnv>();
+
+/** Changes the caller's password and signs out their other sessions. */
+accountRoutes.post('/password', async (c) => {
+  const user = requireUser(c);
+  const deps = c.get('deps');
+  await limit(c, `password:${user.id}`, 10, 900);
+  const input = await body(c, changePasswordSchema);
+  const stored = (await deps.repos.credentials()).passwords[user.id];
+  if (!stored || !(await verifyPassword(input.currentPassword, stored)))
+    throw new AuthError('invalid_credentials', 'Your current password is incorrect.');
+  const hash = await hashPassword(input.newPassword);
+  const now = deps.clock().toISOString();
+  await deps.repos.updateCredentials((cr) => {
+    cr.passwords[user.id] = { ...hash, updatedAt: now };
+  });
+  await deps.sessions.deleteForUser(user.id);
+  await deps.repos.appendAudit({
+    at: now,
+    actor: user.id,
+    action: 'user.password_changed',
+    target: user.id,
+  });
+  await startSession(c, user);
+  return c.json({ ok: true });
+});
 
 accountRoutes.get('/deactivation', async (c) => {
   const user = requireUser(c);
@@ -30,7 +58,7 @@ accountRoutes.get('/deactivation', async (c) => {
 
 /**
  * Deactivation request. Requires a sign-in within the last 15 minutes and typed confirmation.
- * Never deletes workbooks, client documents, or the Microsoft identity (PRD-ACCT-001..006).
+ * Never deletes project records or history (PRD-ACCT-001..006).
  */
 accountRoutes.post('/deactivation', async (c) => {
   const user = requireUser(c);

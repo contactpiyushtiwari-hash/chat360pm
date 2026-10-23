@@ -1,51 +1,53 @@
 # Product Requirements — Chat360 Project Operations Platform
 
-Status legend used in the right-hand column: **Implemented** (code + automated tests in this repo), **Partial** (some acceptance criteria open), **Planned** (not built). "Verified" is reserved for behaviour confirmed against the real Chat360 Microsoft 365 tenant — **nothing is Verified yet** because no tenant access was available.
+Status legend used in the right-hand column: **Implemented** (code + automated tests in this repo), **Partial** (some acceptance criteria open), **Planned** (not built), **Removed** (dropped by a later decision; the ID is kept). "Verified" is reserved for behaviour confirmed on a real deployment — **nothing is Verified yet** because the app has not been deployed.
 
 ## 1. Objectives
 
 1. Remove manual Excel upkeep, repetitive status emails and ad-hoc escalation chasing.
 2. Make ownership, deadlines, dependencies and delivery risk visible to everyone who needs them.
-3. Keep project records in Chat360's authorised OneDrive with Excel as the official tracker.
+3. Keep project records in Chat360's own database (Cloudflare D1), with the Excel tracker available as a download at any time (ADR-021).
 4. Make PM transfers safe, approved and fully auditable.
 
-Non-goals: client-facing portal, time tracking, invoicing/billing, replacing Outlook or Teams.
+Non-goals: client-facing portal, time tracking, invoicing/billing, replacing the team's email or chat tools.
 
 ## 2. Personas
 
-| Persona                        | Needs                                                                                                 |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| Project Manager (PM)           | Create projects/trackers, plan and track tasks, chase dependencies, send updates, request a transfer. |
-| Tech Team                      | See and update assigned technical work, report blockers, track APIs.                                  |
-| FDE (bot builder)              | Track bot flows, builds and milestones they own.                                                      |
-| Sales POC                      | See scope and commercial commitments for their projects.                                              |
-| Customer Success Manager (CSM) | Track UAT, client follow-ups and adoption tasks.                                                      |
-| Delivery and Operations Head   | Portfolio visibility, escalations, approve transfers, reassign PMs, full history.                     |
-| Administrator                  | Assign roles, configure calendar/escalations/destinations, review account requests, watch jobs.       |
+| Persona                        | Needs                                                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Project Manager (PM)           | Create projects/trackers, plan and track tasks, chase dependencies, send updates, request a transfer.                          |
+| Tech Team                      | See and update assigned technical work, report blockers, track APIs.                                                           |
+| FDE (bot builder)              | Track bot flows, builds and milestones they own.                                                                               |
+| Sales POC                      | See scope and commercial commitments for their projects.                                                                       |
+| Customer Success Manager (CSM) | Track UAT, client follow-ups and adoption tasks.                                                                               |
+| Delivery and Operations Head   | Portfolio visibility, escalations, approve transfers, reassign PMs, full history.                                              |
+| Administrator                  | Add employees and issue set-password links, assign roles, configure calendar/escalations, review account requests, watch jobs. |
 
 ## 3. Key user journeys
 
-1. **Create a project:** PM → New project wizard (basics, team, scope, template & destination, review) → project + `project.json` + `.xlsx` tracker (six delivery sheets + Finance) saved in the approved OneDrive folder → link shown.
-2. **Daily confirmation:** Owner opens My Tasks Today → Completed (closure notes, evidence) or Not completed (reason, next action, revised ETA) → escalation to the configured manager → Excel updates in the background with the outcome shown.
+1. **Create a project:** PM → New project wizard (basics, team, scope, template, review) → project saved → **Download Excel tracker** (six delivery sheets + Finance) available on the project page.
+2. **Daily confirmation:** Owner opens My Tasks Today → Completed (closure notes, evidence) or Not completed (reason, next action, revised ETA) → escalation to the configured manager, visible on their Escalations page.
 3. **No response:** at end of day the system marks Unconfirmed and escalates (once).
 4. **Transfer (PM-initiated):** PM → Request project transfer (pre-filled handover) → Delivery Head reviews → approve (choose PM) / reject (reason) → executed and audited.
 5. **Reassignment (Head-initiated):** Delivery Head → Change project PM → reviews handover → confirms → executed.
-6. **Communication:** compose email from template → preview exactly what is sent → confirm external recipients → send from own Outlook; schedule meetings.
+6. **Communication:** pick a project and template → the draft is filled from project data → open it in your own email app (or copy it).
 7. **Onboarding, support, deactivation** as described below.
 
 ## 4. Requirements
 
 ### Authentication and access (AUTH)
 
-| ID           | Requirement                                                                                                                         | Status                            |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| PRD-AUTH-001 | Employees sign in with their Chat360 Microsoft (Entra ID) account; no separate passwords.                                           | Implemented (live tenant pending) |
-| PRD-AUTH-002 | Identity is validated server-side (ID token signature, issuer, audience, nonce, tenant); browser-supplied emails are never trusted. | Implemented                       |
-| PRD-AUTH-003 | Guests, external and disabled accounts are refused; the email domain alone never authorises or elevates.                            | Implemented                       |
-| PRD-AUTH-004 | Users are identified by Entra object id; name/email changes keep history.                                                           | Implemented                       |
-| PRD-AUTH-005 | Sessions expire (12 h absolute, 8 h idle) and can be revoked immediately.                                                           | Implemented                       |
-| PRD-AUTH-006 | Logout ends the app session and offers Microsoft sign-out.                                                                          | Implemented                       |
-| PRD-AUTH-007 | Sensitive actions (deactivation) require a sign-in within 15 minutes.                                                               | Implemented                       |
+| ID           | Requirement                                                                                                                                                   | Status                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| PRD-AUTH-001 | Employees sign in with email and password; administrators create accounts and issue one-time set-password links; the first admin uses a setup code (ADR-022). | Implemented                             |
+| PRD-AUTH-002 | Passwords are stored only as salted PBKDF2 hashes; login errors do not reveal which accounts exist; attempts are rate-limited.                                | Implemented                             |
+| PRD-AUTH-003 | Deactivated accounts are refused; the email domain alone never authorises or elevates.                                                                        | Implemented                             |
+| PRD-AUTH-004 | Users are identified by a stable random id; name/email changes keep history.                                                                                  | Implemented                             |
+| PRD-AUTH-005 | Sessions expire (12 h absolute, 8 h idle) and can be revoked immediately.                                                                                     | Implemented                             |
+| PRD-AUTH-006 | Logout ends the app session; changing or resetting a password signs out other sessions.                                                                       | Implemented                             |
+| PRD-AUTH-008 | Users can change their password (current password required); admins can issue a new set-password link for forgotten passwords.                                | Implemented                             |
+| PRD-AUTH-009 | Multi-factor authentication.                                                                                                                                  | Planned (Cloudflare Access recommended) |
+| PRD-AUTH-007 | Sensitive actions (deactivation) require a sign-in within 15 minutes.                                                                                         | Implemented                             |
 
 ### Roles and project team (ROLE)
 
@@ -57,19 +59,19 @@ Non-goals: client-facing portal, time tracking, invoicing/billing, replacing Out
 | PRD-ROLE-004 | Team changes record who, when, from, to and why; task owners never change implicitly.                  | Implemented |
 | PRD-ROLE-005 | Admins do not receive project data access by virtue of the admin role.                                 | Implemented |
 
-### Projects and Excel (PROJ)
+### Projects and Excel tracker (PROJ)
 
-| ID           | Requirement                                                                                                                                                                                             | Status                                |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| PRD-PROJ-001 | Project wizard collects client, name, category, team, dates, languages, integrations, QA/UAT workflow, template and approved destination.                                                               | Implemented                           |
-| PRD-PROJ-002 | A valid `.xlsx` with six delivery sheets (Gantt Chart, WBS, API List Pending, Escalation Matrix, Last Week Task, This Week Task) plus a Finance sheet (PRD-FIN-005) is generated and saved to OneDrive. | Implemented (live OneDrive pending)   |
-| PRD-PROJ-003 | Workbooks use Excel tables, filters, formulas, date formats, list validation, conditional formatting and freeze panes.                                                                                  | Implemented                           |
-| PRD-PROJ-004 | Updates never blindly overwrite: rows keyed by ID, user columns/rows preserved, Excel edits reported as conflicts.                                                                                      | Implemented                           |
-| PRD-PROJ-005 | Synchronisation status (synced, pending, failed, conflict) and errors are visible; sync can be retried.                                                                                                 | Implemented                           |
-| PRD-PROJ-006 | Workbook generation failure is reported and retryable without recreating the project.                                                                                                                   | Implemented                           |
-| PRD-PROJ-007 | Project documents (SOW, BRD, bot flows) can be linked.                                                                                                                                                  | Implemented (links only)              |
-| PRD-PROJ-008 | Excel edits can be imported back into the app.                                                                                                                                                          | Planned                               |
-| PRD-PROJ-009 | Project folders are shared automatically with team members.                                                                                                                                             | Planned (library permissions assumed) |
+| ID           | Requirement                                                                                                                                                                                                                             | Status                                                                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| PRD-PROJ-001 | Project wizard collects client, name, category, team, dates, languages, integrations, QA/UAT workflow and template.                                                                                                                     | Implemented                                                               |
+| PRD-PROJ-002 | A valid `.xlsx` with six delivery sheets (Gantt Chart, WBS, API List Pending, Escalation Matrix, Last Week Task, This Week Task) plus a Finance sheet (PRD-FIN-005) can be downloaded for any visible project, built from current data. | Implemented (desktop Excel check pending)                                 |
+| PRD-PROJ-003 | Workbooks use Excel tables, filters, formulas, date formats, list validation, conditional formatting and freeze panes.                                                                                                                  | Implemented                                                               |
+| PRD-PROJ-004 | Updates never blindly overwrite: rows keyed by ID, user columns/rows preserved, Excel edits reported as conflicts.                                                                                                                      | Removed (ADR-021: the tracker is generated on download, not synchronised) |
+| PRD-PROJ-005 | Synchronisation status (synced, pending, failed, conflict) and errors are visible; sync can be retried.                                                                                                                                 | Removed (ADR-021)                                                         |
+| PRD-PROJ-006 | Workbook generation failure is reported and retryable without recreating the project.                                                                                                                                                   | Removed (ADR-021: nothing is generated at creation)                       |
+| PRD-PROJ-007 | Project documents (SOW, BRD, bot flows) can be linked.                                                                                                                                                                                  | Implemented (links only)                                                  |
+| PRD-PROJ-008 | Edits made in a downloaded tracker can be imported back into the app.                                                                                                                                                                   | Planned                                                                   |
+| PRD-PROJ-009 | Project folders are shared automatically with team members.                                                                                                                                                                             | Removed (no shared folders; access is per project in the app)             |
 
 ### Tasks and WBS (TASK)
 
@@ -87,62 +89,62 @@ Non-goals: client-facing portal, time tracking, invoicing/billing, replacing Out
 
 ### Escalations (ESC)
 
-| ID          | Requirement                                                                                                                                                                    | Status                          |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
-| PRD-ESC-001 | Escalations record project, task, owner, original deadline, reason, impact, next action, revised ETA, manager, trigger time, notification status, acknowledgement, resolution. | Implemented                     |
-| PRD-ESC-002 | Configurable levels/SLAs; unresolved escalations move up a level once per SLA. Owner-as-manager skips to the next level.                                                       | Implemented                     |
-| PRD-ESC-003 | Duplicate escalations are prevented (deterministic dedupe keys).                                                                                                               | Implemented                     |
-| PRD-ESC-004 | Notification outcomes are recorded truthfully (accepted / failed / not configured / unknown).                                                                                  | Implemented (live mail pending) |
+| ID          | Requirement                                                                                                                                                                    | Status                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| PRD-ESC-001 | Escalations record project, task, owner, original deadline, reason, impact, next action, revised ETA, manager, trigger time, notification status, acknowledgement, resolution. | Implemented                                                   |
+| PRD-ESC-002 | Configurable levels/SLAs; unresolved escalations move up a level once per SLA. Owner-as-manager skips to the next level.                                                       | Implemented                                                   |
+| PRD-ESC-003 | Duplicate escalations are prevented (deterministic dedupe keys).                                                                                                               | Implemented                                                   |
+| PRD-ESC-004 | Notification outcomes are recorded truthfully (accepted / failed / not configured / unknown).                                                                                  | Implemented (no mail provider: outcomes are "not configured") |
 
 ### Transfers (TRANSFER)
 
-| ID               | Requirement                                                                                                                                                                          | Status                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
-| PRD-TRANSFER-001 | PM can request a transfer with reason, proposed PM, effective date, and auto-attached handover (status, tasks, deadlines, blockers, APIs, UAT, commitments, escalations, documents). | Implemented                     |
-| PRD-TRANSFER-002 | States: Draft, Submitted, Under Review, Approved, Rejected (reason required), Completed, Cancelled.                                                                                  | Implemented                     |
-| PRD-TRANSFER-003 | Delivery Head can reassign the PM directly after reviewing the handover and confirming.                                                                                              | Implemented                     |
-| PRD-TRANSFER-004 | History is never deleted or reset; only the current PM changes; previous assignments remain visible.                                                                                 | Implemented                     |
-| PRD-TRANSFER-005 | Execution is recorded step by step, idempotent, resumable; completion only after required steps succeed.                                                                             | Implemented                     |
-| PRD-TRANSFER-006 | Notifications on submit, approve, reject, complete.                                                                                                                                  | Implemented (live mail pending) |
-| PRD-TRANSFER-007 | Previous PM keeps read access for a configured period unless they still hold another role.                                                                                           | Implemented                     |
+| ID               | Requirement                                                                                                                                                                          | Status                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| PRD-TRANSFER-001 | PM can request a transfer with reason, proposed PM, effective date, and auto-attached handover (status, tasks, deadlines, blockers, APIs, UAT, commitments, escalations, documents). | Implemented                          |
+| PRD-TRANSFER-002 | States: Draft, Submitted, Under Review, Approved, Rejected (reason required), Completed, Cancelled.                                                                                  | Implemented                          |
+| PRD-TRANSFER-003 | Delivery Head can reassign the PM directly after reviewing the handover and confirming.                                                                                              | Implemented                          |
+| PRD-TRANSFER-004 | History is never deleted or reset; only the current PM changes; previous assignments remain visible.                                                                                 | Implemented                          |
+| PRD-TRANSFER-005 | Execution is recorded step by step, idempotent, resumable; completion only after required steps succeed.                                                                             | Implemented                          |
+| PRD-TRANSFER-006 | Notifications on submit, approve, reject, complete.                                                                                                                                  | Partial (recorded; no mail provider) |
+| PRD-TRANSFER-007 | Previous PM keeps read access for a configured period unless they still hold another role.                                                                                           | Implemented                          |
 
-### Microsoft 365 communication (COMM)
+### Communication (COMM)
 
-| ID           | Requirement                                                                                                                                                  | Status                            |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
-| PRD-COMM-001 | Compose from templates; preview recipients, subject, body, attachments; external recipients need explicit confirmation; content cannot change after preview. | Implemented                       |
-| PRD-COMM-002 | Send from the user's own mailbox (delegated); record project-linked sends without storing bodies; show failures.                                             | Implemented (live Graph pending)  |
-| PRD-COMM-003 | Today's and upcoming meetings; create (with Teams option), update, cancel; external attendees need confirmation.                                             | Implemented (live Graph pending)  |
-| PRD-COMM-004 | Attachments on outgoing email.                                                                                                                               | Planned (workbook link supported) |
+| ID           | Requirement                                                                                                         | Status                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| PRD-COMM-001 | Email drafts from templates filled with project data; the user opens the draft in their own email app or copies it. | Implemented                         |
+| PRD-COMM-002 | Send from the user's own mailbox (delegated); record project-linked sends without storing bodies; show failures.    | Removed (ADR-021: no Microsoft 365) |
+| PRD-COMM-003 | Today's and upcoming meetings; create (with Teams option), update, cancel; external attendees need confirmation.    | Removed (ADR-021)                   |
+| PRD-COMM-004 | Attachments on outgoing email.                                                                                      | Removed (ADR-021)                   |
 
 ### Finance (FIN)
 
-| ID          | Requirement                                                                                                                                                                                                                                 | Status                                                         |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| PRD-FIN-001 | Each project records, in a currency (default INR): **Amount Raised and Overdue (for Go-Live)**, **Amount that can be raised on immediate basis**, **Total**, **Amount to be raised**, plus remarks, last updated time and person.           | Implemented                                                    |
-| PRD-FIN-002 | **Total = Amount Raised and Overdue (for Go-Live) + Amount that can be raised on immediate basis**; it is calculated (in the app and by an Excel formula), never typed.                                                                     | Implemented (interpretation to confirm with Chat360 — ADR-019) |
-| PRD-FIN-003 | Amounts are non-negative with at most 2 decimals; stale concurrent edits are rejected; every change is audited with old and new values.                                                                                                     | Implemented                                                    |
-| PRD-FIN-004 | PM, the project's Delivery Head, Delivery Heads (portfolio) and the Sales POC can edit; the CSM can view; Tech Team, FDE, former PMs and administrators cannot see the figures in the app (including audit entries and transfer snapshots). | Implemented                                                    |
-| PRD-FIN-005 | The tracker has a seventh sheet, **Finance** (`tblFinance`), kept in sync like the other sheets; an overdue amount above zero is highlighted.                                                                                               | Implemented (live Excel pending)                               |
-| PRD-FIN-006 | Finance is part of the transfer handover summary, and analytics show per-currency totals for projects the viewer may see.                                                                                                                   | Implemented                                                    |
-| PRD-FIN-007 | Restricting the Finance sheet inside the Excel file itself (separate workbook or sheet protection).                                                                                                                                         | Planned — see ADR-019                                          |
+| ID          | Requirement                                                                                                                                                                                                                                 | Status                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| PRD-FIN-001 | Each project records, in a currency (default INR): **Amount Raised and Overdue (for Go-Live)**, **Amount that can be raised on immediate basis**, **Total**, **Amount to be raised**, plus remarks, last updated time and person.           | Implemented                                                           |
+| PRD-FIN-002 | **Total = Amount Raised and Overdue (for Go-Live) + Amount that can be raised on immediate basis**; it is calculated (in the app and by an Excel formula), never typed.                                                                     | Implemented (interpretation to confirm with Chat360 — ADR-019)        |
+| PRD-FIN-003 | Amounts are non-negative with at most 2 decimals; stale concurrent edits are rejected; every change is audited with old and new values.                                                                                                     | Implemented                                                           |
+| PRD-FIN-004 | PM, the project's Delivery Head, Delivery Heads (portfolio) and the Sales POC can edit; the CSM can view; Tech Team, FDE, former PMs and administrators cannot see the figures in the app (including audit entries and transfer snapshots). | Implemented                                                           |
+| PRD-FIN-005 | The tracker has a seventh sheet, **Finance** (`tblFinance`); an overdue amount above zero is highlighted; the sheet is empty for people who may not see finance.                                                                            | Implemented (desktop Excel check pending)                             |
+| PRD-FIN-006 | Finance is part of the transfer handover summary, and analytics show per-currency totals for projects the viewer may see.                                                                                                                   | Implemented                                                           |
+| PRD-FIN-007 | Restricting the Finance sheet inside the Excel file itself (separate workbook or sheet protection).                                                                                                                                         | Removed (the download already omits finance for those without access) |
 
 ### Onboarding, support, account (ONB / SUP / ACCT)
 
-| ID           | Requirement                                                                                                                                                              | Status      |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
-| PRD-ONB-001  | Role-specific checklist; required vs optional steps; system-verified steps (role assigned, Outlook consent) cannot be self-ticked; incomplete until required steps done. | Implemented |
-| PRD-SUP-001  | Support requests with id, category, subject, description, reporter, optional authorised project, priority, status, assignee, resolution notes, history.                  | Implemented |
-| PRD-SUP-002  | Reporters see their own; admins triage all; configurable contact route.                                                                                                  | Implemented |
-| PRD-ACCT-001 | Deactivation request explains consequences, requires recent sign-in and typed confirmation.                                                                              | Implemented |
-| PRD-ACCT-002 | PMs with active projects are blocked until transfers; Delivery Head notified.                                                                                            | Implemented |
-| PRD-ACCT-003 | Approval revokes sessions and access; data and Microsoft identity are not deleted.                                                                                       | Implemented |
+| ID           | Requirement                                                                                                                                             | Status      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| PRD-ONB-001  | Role-specific checklist; required vs optional steps; system-verified steps (role assigned) cannot be self-ticked; incomplete until required steps done. | Implemented |
+| PRD-SUP-001  | Support requests with id, category, subject, description, reporter, optional authorised project, priority, status, assignee, resolution notes, history. | Implemented |
+| PRD-SUP-002  | Reporters see their own; admins triage all; configurable contact route.                                                                                 | Implemented |
+| PRD-ACCT-001 | Deactivation request explains consequences, requires recent sign-in and typed confirmation.                                                             | Implemented |
+| PRD-ACCT-002 | PMs with active projects are blocked until transfers; Delivery Head notified.                                                                           | Implemented |
+| PRD-ACCT-003 | Approval revokes sessions and access; project data is not deleted.                                                                                      | Implemented |
 
 ### Analytics (ANALYTICS)
 
 | ID                | Requirement                                                                                                                                                     | Status      |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| PRD-ANALYTICS-001 | Product events (login, onboarding, project/workbook, tasks, confirmations, escalations, transfers, email/calendar outcomes, support) without content or tokens. | Implemented |
+| PRD-ANALYTICS-001 | Product events (login, onboarding, projects, tracker downloads, tasks, confirmations, escalations, transfers, email drafts, support) without content or tokens. | Implemented |
 | PRD-ANALYTICS-002 | Delivery Head sees portfolio metrics; others see projects where they are PM/team member.                                                                        | Implemented |
 | PRD-ANALYTICS-003 | Metric definitions (below) are documented; no fabricated or AI scores.                                                                                          | Implemented |
 
@@ -166,7 +168,7 @@ Non-goals: client-facing portal, time tracking, invoicing/billing, replacing Out
 | PRD-NFR-001 | Works on desktop, tablet and phone browsers; no horizontal overflow; 44 px touch targets on phones.               | Implemented (emulation only; real devices pending) |
 | PRD-NFR-002 | Loading, empty, error (with recovery and error ID) and custom 404 states throughout.                              | Implemented                                        |
 | PRD-NFR-003 | Accessible: labelled controls, keyboard navigation, visible focus, dialogs with focus management, reduced motion. | Implemented (no formal audit yet)                  |
-| PRD-SEC-001 | Least-privilege Graph permissions; tokens never in the browser.                                                   | Implemented (admin consent pending)                |
+| PRD-SEC-001 | No secrets or tokens in the browser; one secret (`SETUP_CODE`); configuration fails closed.                       | Implemented                                        |
 | PRD-SEC-009 | Logs and analytics never contain tokens, cookies, email bodies or notes.                                          | Implemented                                        |
 | PRD-OPS-001 | Scheduled jobs are idempotent, overlap-safe and can be disabled by admins.                                        | Implemented                                        |
 | PRD-OPS-002 | Crash reports and backend errors carry ids and are visible to maintainers.                                        | Implemented (alert routing pending)                |
@@ -182,13 +184,13 @@ Non-goals: client-facing portal, time tracking, invoicing/billing, replacing Out
 
 ## 6. Delivery phases
 
-| Phase                  | Scope                                                                     | State                                  |
-| ---------------------- | ------------------------------------------------------------------------- | -------------------------------------- |
-| 0 Discovery            | Repo inspection (empty), docs, ADRs, CLAUDE.md                            | Done                                   |
-| 1 Foundation           | Auth, roles, navigation, projects, workbook generation, tasks             | Implemented                            |
-| 2 Delivery operations  | WBS/Gantt/APIs, daily confirmation, escalations, reminders, weekly sheets | Implemented                            |
-| 3 Team ownership       | Team management, transfers, reassignment, handover, history               | Implemented                            |
-| 4 Microsoft 365        | Outlook email and calendar                                                | Implemented, live verification pending |
-| 5 Product operations   | Analytics, monitoring, onboarding, 404/states, support, account lifecycle | Implemented                            |
-| 6 Conditional          | Billing and app-store evaluated: not applicable (ADR-015/016)             | Done                                   |
-| 7 Production readiness | Tenant setup, live Graph tests, real-device tests, alerting, pilot        | **Pending external access**            |
+| Phase                  | Scope                                                                     | State                                    |
+| ---------------------- | ------------------------------------------------------------------------- | ---------------------------------------- |
+| 0 Discovery            | Repo inspection (empty), docs, ADRs, CLAUDE.md                            | Done                                     |
+| 1 Foundation           | Auth, roles, navigation, projects, tracker download, tasks                | Implemented                              |
+| 2 Delivery operations  | WBS/Gantt/APIs, daily confirmation, escalations, reminders, weekly sheets | Implemented                              |
+| 3 Team ownership       | Team management, transfers, reassignment, handover, history               | Implemented                              |
+| 4 Microsoft 365        | Outlook email and calendar                                                | Removed (ADR-021); email drafts instead  |
+| 5 Product operations   | Analytics, monitoring, onboarding, 404/states, support, account lifecycle | Implemented                              |
+| 6 Conditional          | Billing and app-store evaluated: not applicable (ADR-015/016)             | Done                                     |
+| 7 Production readiness | D1 database + Cloudflare settings, real-device tests, alerting, pilot     | **Pending (Chat360 Cloudflare account)** |

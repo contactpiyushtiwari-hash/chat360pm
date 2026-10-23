@@ -11,7 +11,9 @@ import {
 } from '@chat360/core';
 import type { Deps } from '../src/deps';
 import { PATHS } from '../src/store/repos';
-import { createWorkbook } from '../src/services/workbook';
+import { hashPassword } from '../src/auth/crypto';
+
+export const DEMO_PASSWORD = 'demo-password';
 
 /** Fictional demo people. No real employee names or addresses are used anywhere in the code. */
 export const DEMO_USERS: [string, string, GlobalRole[]][] = [
@@ -162,7 +164,11 @@ export async function seedDemo(deps: Deps) {
   for (const p of [p1, p2]) {
     await deps.repos.createProject(p);
     await deps.repos.upsertIndexEntry(indexEntryOf(p, today));
-    await createWorkbook(deps, p.id);
   }
+  // Every demo user can also sign in with a password. Low iteration count: dev/test data only.
+  const hash = await hashPassword(DEMO_PASSWORD, 1000);
+  await deps.repos.updateCredentials((cr) => {
+    for (const u of users) cr.passwords[u.id] = { ...hash, updatedAt: now };
+  });
   return { users, projects: [p1.id, p2.id] };
 }

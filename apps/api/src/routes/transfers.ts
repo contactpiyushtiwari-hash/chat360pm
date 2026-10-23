@@ -30,7 +30,7 @@ transferRoutes.post('/:id/transfers', async (c) => {
     c,
     c.req.param('id'),
     (p, ctx) => requestTransfer(p, input, ctx, directory),
-    { idempotencyKey: key, skipSync: true },
+    { idempotencyKey: key },
   );
   const t = result ?? project.transfers.find((x) => x.id === replayedRef);
   if (result)
@@ -63,7 +63,7 @@ transferRoutes.post('/:id/transfers/:tid/submit', async (c) => {
     c,
     c.req.param('id'),
     (p, ctx) => submitTransfer(p, c.req.param('tid'), ctx, directory),
-    { skipSync: true },
+    {},
   );
   return c.json({ transfer: result });
 });
@@ -73,7 +73,7 @@ transferRoutes.post('/:id/transfers/:tid/review', async (c) => {
     c,
     c.req.param('id'),
     (p, ctx) => startReview(p, c.req.param('tid'), ctx),
-    { skipSync: true },
+    {},
   );
   return c.json({ transfer: result });
 });
@@ -86,7 +86,7 @@ transferRoutes.post('/:id/transfers/:tid/approve', async (c) => {
     c,
     c.req.param('id'),
     (p, ctx) => approveTransfer(p, c.req.param('tid'), input.newPmId, input.notes, ctx, directory),
-    { skipSync: true },
+    {},
   );
   deps.analytics.track('transfer_approved', { projectId: c.req.param('id') });
   // Execute now if effective; otherwise the scheduled job executes on the effective date.
@@ -103,7 +103,7 @@ transferRoutes.post('/:id/transfers/:tid/reject', async (c) => {
     c,
     c.req.param('id'),
     (p, ctx) => rejectTransfer(p, c.req.param('tid'), input.reason, ctx),
-    { skipSync: true },
+    {},
   );
   c.get('deps').analytics.track('transfer_rejected', { projectId: c.req.param('id') });
   return c.json({ transfer: result });
@@ -114,7 +114,7 @@ transferRoutes.post('/:id/transfers/:tid/cancel', async (c) => {
     c,
     c.req.param('id'),
     (p, ctx) => cancelTransfer(p, c.req.param('tid'), ctx),
-    { skipSync: true },
+    {},
   );
   return c.json({ transfer: result });
 });
@@ -154,7 +154,7 @@ transferRoutes.post('/:id/reassign-pm', async (c) => {
         ctx,
         directory,
       ),
-    { idempotencyKey: key, skipSync: true },
+    { idempotencyKey: key },
   );
   const t = result ?? project.transfers.find((x) => x.id === replayedRef)!;
   if (result) deps.analytics.track('pm_reassigned', { projectId: project.id });

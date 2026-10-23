@@ -129,7 +129,7 @@ export function TaskDialog({
       }
       if (Object.keys(body).length === 1) return onClose();
       await patch(`/api/projects/${project.id}/tasks/${t.id}`, body);
-      toast('success', 'Task updated. Excel will update in the background.');
+      toast('success', 'Task updated.');
     }
     onSaved();
   });

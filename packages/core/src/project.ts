@@ -21,7 +21,7 @@ import type {
   UserId,
 } from './types';
 
-/** Folder names must be safe for OneDrive: strip characters OneDrive rejects. */
+/** Storage keys stay readable and safe: strip path and control characters. */
 export function safeFolderName(s: string): string {
   return s
     .replace(/["*:<>?/\\|#%]/g, ' ')
@@ -47,7 +47,7 @@ export function createProject(
   const template = findTemplate(input.templateId);
   if (!template) throw invalid('Unknown project template.', { templateId: input.templateId });
   const destination = ctx.config.destinations.find((d) => d.id === input.destinationId);
-  if (!destination) throw invalid('Destination is not an approved OneDrive location.');
+  if (!destination) throw invalid('Unknown project destination.');
   if (!ctx.config.projectCategories.includes(input.category)) {
     throw invalid('Unknown project category.');
   }
@@ -89,21 +89,7 @@ export function createProject(
     escalations: [],
     transfers: [],
     documents: [],
-    communications: [],
     finance: emptyFinance(),
-    workbook: {
-      driveItemId: null,
-      webUrl: null,
-      fileName: `${safeFolderName(`${input.clientName} - ${input.name}`)} - Tracker.xlsx`,
-      state: 'not_created',
-      syncedRevision: 0,
-      lastSyncedAt: null,
-      lastAttemptAt: null,
-      lastError: null,
-      attempts: 0,
-      rowHashes: {},
-      conflicts: [],
-    },
     audit: [],
     appliedOperations: [],
     createdAt: ctx.now,
@@ -334,8 +320,6 @@ export function indexEntryOf(project: Project, today: IsoDate): ProjectIndexEntr
     formerPms: project.formerPms,
     deliveryHeadId: project.team.deliveryHead,
     folderPath: project.folderPath,
-    workbookUrl: project.workbook.webUrl,
-    workbookState: project.workbook.state,
     startDate: project.startDate,
     targetGoLive: project.targetGoLive,
     summary: summarizeProject(project, today),

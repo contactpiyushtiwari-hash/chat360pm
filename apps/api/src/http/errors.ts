@@ -2,23 +2,6 @@ import { DomainError } from '@chat360/core';
 import { ZodError } from 'zod';
 import { PreconditionFailedError } from '../ports';
 
-/** Error from Microsoft Graph, with the HTTP status and Graph error code preserved. */
-export class GraphError extends Error {
-  override name = 'GraphError';
-  constructor(
-    public readonly status: number,
-    public readonly code: string,
-    message: string,
-    public readonly requestId?: string,
-    public readonly retryAfterSeconds?: number,
-  ) {
-    super(message);
-  }
-  get retryable() {
-    return this.status === 429 || this.status >= 500;
-  }
-}
-
 export class AuthError extends Error {
   override name = 'AuthError';
   constructor(
@@ -27,7 +10,8 @@ export class AuthError extends Error {
       | 'reauth_required'
       | 'not_authorized'
       | 'account_inactive'
-      | 'consent_required',
+      | 'invalid_credentials'
+      | 'link_invalid',
     message: string,
   ) {
     super(message);
@@ -91,7 +75,12 @@ export function toErrorResponse(
     return { ...body(status, err.code, err.message, err.details), log: 'none' };
   }
   if (err instanceof AuthError) {
-    const status = err.code === 'unauthenticated' ? 401 : 403;
+    const status =
+      err.code === 'unauthenticated' || err.code === 'invalid_credentials'
+        ? 401
+        : err.code === 'link_invalid'
+          ? 400
+          : 403;
     return {
       ...body(status, err.code, err.message),
       log: err.code === 'not_authorized' ? 'warn' : 'none',
@@ -110,54 +99,6 @@ export function toErrorResponse(
     };
   }
   const errorId = `ERR-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-  if (err instanceof GraphError) {
-    if (err.status === 401 || err.status === 403) {
-      return {
-        ...body(
-          502,
-          'graph_permission_denied',
-          'Microsoft 365 denied this operation. Check that the required permissions are granted.',
-          { graphCode: err.code },
-          errorId,
-        ),
-        log: 'error',
-      };
-    }
-    if (err.status === 404) {
-      return {
-        ...body(
-          502,
-          'graph_not_found',
-          'The OneDrive file or folder was not found.',
-          { graphCode: err.code },
-          errorId,
-        ),
-        log: 'error',
-      };
-    }
-    if (err.status === 429) {
-      return {
-        ...body(
-          503,
-          'graph_throttled',
-          'Microsoft 365 is throttling requests. Please retry shortly.',
-          undefined,
-          errorId,
-        ),
-        log: 'warn',
-      };
-    }
-    return {
-      ...body(
-        502,
-        'graph_error',
-        'Microsoft 365 returned an error. Please retry.',
-        { graphCode: err.code },
-        errorId,
-      ),
-      log: 'error',
-    };
-  }
   return {
     ...body(
       500,
